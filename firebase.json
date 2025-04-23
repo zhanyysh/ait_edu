@@ -1,0 +1,38 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "ait-edu-98b3e",
+          "appId": "1:298634593381:android:89d355281c88b1acca728c",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "ait-edu-98b3e",
+          "configurations": {
+            "android": "1:298634593381:android:89d355281c88b1acca728c",
+            "ios": "1:298634593381:ios:7ba0b8558ad7edbcca728c",
+            "macos": "1:298634593381:ios:7ba0b8558ad7edbcca728c",
+            "web": "1:298634593381:web:7357bddbfb6e3cc3ca728c",
+            "windows": "1:298634593381:web:820c69a77b1b12ddca728c"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ]
+}

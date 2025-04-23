@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "298634593381",
+    "project_id": "ait-edu-98b3e",
+    "storage_bucket": "ait-edu-98b3e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:298634593381:android:1a027a86f5ae2025ca728c",
+        "android_client_info": {
+          "package_name": "com.example.ait_edu"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDDWruTR66GDBnZR1SjXhVnQ6uPpllDFf4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:298634593381:android:89d355281c88b1acca728c",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDDWruTR66GDBnZR1SjXhVnQ6uPpllDFf4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
