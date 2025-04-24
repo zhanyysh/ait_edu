@@ -5,13 +5,13 @@ import 'settings.dart';
 import 'dart:math';
 
 class HomePage extends StatefulWidget {
-  const HomePage({Key? key}) : super(key: key);
+  const HomePage({super.key});
 
   @override
-  _HomePageState createState() => _HomePageState();
+  HomePageState createState() => HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
   final List<Widget> _pages = [
@@ -72,18 +72,49 @@ class _HomePageState extends State<HomePage> {
 }
 
 class TestSelectionPage extends StatefulWidget {
-  const TestSelectionPage({Key? key}) : super(key: key);
+  const TestSelectionPage({super.key});
 
   @override
-  _TestSelectionPageState createState() => _TestSelectionPageState();
+  TestSelectionPageState createState() => TestSelectionPageState();
 }
 
-class _TestSelectionPageState extends State<TestSelectionPage> {
+class TestSelectionPageState extends State<TestSelectionPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  List<String> _selectedTestTypeIds = [];
+  Map<String, String?> _selectedLanguages = {};
+  Map<String, List<Map<String, String>>> _availableLanguages = {};
+  List<Map<String, String>> _testTypes = [];
   String? _selectedTestTypeId;
-  String? _selectedLanguage;
-  List<Map<String, String>> _availableLanguages = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTestTypes();
+  }
+
+  Future<void> _loadTestTypes() async {
+    try {
+      QuerySnapshot testTypesSnapshot = await _firestore.collection('test_types').get();
+      if (mounted) {
+        setState(() {
+          _testTypes = testTypesSnapshot.docs.map((doc) {
+            return {
+              'id': doc.id,
+              'name': doc['name'] as String,
+            };
+          }).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('TestSelectionPage: Ошибка загрузки видов тестов: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки тестов: $e')),
+        );
+      }
+    }
+  }
 
   Future<void> _loadAvailableLanguages(String testTypeId) async {
     try {
@@ -93,166 +124,224 @@ class _TestSelectionPageState extends State<TestSelectionPage> {
           .collection('languages')
           .get();
 
-      setState(() {
-        _availableLanguages = languagesSnapshot.docs.map((doc) {
-          return {
-            'name': doc['name'] as String,
-            'code': doc['code'] as String,
-          };
-        }).toList();
-      });
+      if (mounted) {
+        setState(() {
+          _availableLanguages[testTypeId] = languagesSnapshot.docs.map((doc) {
+            return {
+              'name': doc['name'] as String,
+              'code': doc['code'] as String,
+            };
+          }).toList();
+        });
+      }
     } catch (e) {
-      debugPrint('TestSelectionPage: Ошибка загрузки языков: $e');
-      setState(() {
-        _availableLanguages = [];
-      });
+      debugPrint('TestSelectionPage: Ошибка загрузки языков для testTypeId $testTypeId: $e');
+      if (mounted) {
+        setState(() {
+          _availableLanguages[testTypeId] = [];
+        });
+      }
     }
   }
 
-  Future<void> _resetProgress() async {
-    final user = _auth.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Пользователь не авторизован')),
-      );
-      return;
-    }
-
+  void _addTestType() {
     if (_selectedTestTypeId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Выберите вид теста')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Выберите вид теста')),
+        );
+      }
       return;
     }
 
-    try {
-      QuerySnapshot usedQuestions = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('used_questions')
-          .where('test_type_id', isEqualTo: _selectedTestTypeId)
-          .where('language', isEqualTo: _selectedLanguage)
-          .get();
-
-      for (var doc in usedQuestions.docs) {
-        await doc.reference.delete();
+    setState(() {
+      if (!_selectedTestTypeIds.contains(_selectedTestTypeId)) {
+        _selectedTestTypeIds.add(_selectedTestTypeId!);
+        _selectedLanguages[_selectedTestTypeId!] = null;
+        _loadAvailableLanguages(_selectedTestTypeId!);
       }
+      _selectedTestTypeId = null; // Reset dropdown after adding
+    });
+  }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Прогресс сброшен')),
-      );
-
-      await _loadAvailableLanguages(_selectedTestTypeId!);
-      setState(() {
-        _selectedLanguage = null;
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка при сбросе прогресса: $e')),
-      );
+  void _startTest(String testTypeId, String? language) {
+    if (language == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Выберите язык')),
+        );
+      }
+      return;
     }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TestPage(
+          testTypeId: testTypeId,
+          language: language,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Прохождение тестов',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          StreamBuilder<QuerySnapshot>(
-            stream: _firestore.collection('test_types').snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Text('Ошибка: ${snapshot.error}');
-              }
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const CircularProgressIndicator();
-              }
-              final testTypes = snapshot.data!.docs;
-              return DropdownButtonFormField<String>(
-                value: _selectedTestTypeId,
-                hint: const Text('Выберите вид теста'),
-                items: testTypes.map((testType) {
-                  return DropdownMenuItem<String>(
-                    value: testType.id,
-                    child: Text(testType['name']),
-                  );
-                }).toList(),
-                onChanged: (value) async {
-                  setState(() {
-                    _selectedTestTypeId = value;
-                    _selectedLanguage = null;
-                    _availableLanguages = [];
-                  });
-                  if (value != null) {
-                    await _loadAvailableLanguages(value);
-                  }
-                },
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          if (_selectedTestTypeId != null && _availableLanguages.isNotEmpty)
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Прохождение тестов',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            // Test Type Selection Dropdown
             DropdownButtonFormField<String>(
-              value: _selectedLanguage,
-              hint: const Text('Выберите язык'),
-              items: _availableLanguages.map((lang) {
+              value: _selectedTestTypeId,
+              hint: const Text('Выберите вид теста'),
+              items: _testTypes.map((testType) {
                 return DropdownMenuItem<String>(
-                  value: lang['code'],
-                  child: Text(lang['name']!),
+                  value: testType['id'],
+                  child: Text(testType['name']!),
                 );
               }).toList(),
               onChanged: (value) {
                 setState(() {
-                  _selectedLanguage = value;
+                  _selectedTestTypeId = value;
                 });
               },
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.blue),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.blue),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.blue, width: 2),
+                ),
               ),
             ),
-          if (_selectedTestTypeId != null && _availableLanguages.isEmpty)
-            const Text(
-              'Нет доступных языков для этого теста',
-              style: TextStyle(color: Colors.red),
-            ),
-          const SizedBox(height: 16),
-          if (_selectedTestTypeId != null)
+            const SizedBox(height: 8),
+            // Add Test Button
             Center(
               child: ElevatedButton(
-                onPressed: _resetProgress,
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                child: const Text('Сбросить прогресс'),
+                onPressed: _addTestType,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Добавить тест'),
               ),
             ),
-          const SizedBox(height: 16),
-          if (_selectedLanguage != null)
-            Center(
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => TestPage(
-                        testTypeId: _selectedTestTypeId!,
-                        language: _selectedLanguage!,
+            const SizedBox(height: 16),
+            // Vertical Blocks for Selected Tests
+            if (_selectedTestTypeIds.isNotEmpty) ...[
+              const Text(
+                'Выбранные тесты:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Column(
+                children: _selectedTestTypeIds.map((testTypeId) {
+                  final testTypeName = _testTypes
+                      .firstWhere((testType) => testType['id'] == testTypeId)['name']!;
+                  final languages = _availableLanguages[testTypeId] ?? [];
+                  final selectedLanguage = _selectedLanguages[testTypeId];
+
+                  return GestureDetector(
+                    onTap: () => _startTest(testTypeId, selectedLanguage),
+                    child: Card(
+                      margin: const EdgeInsets.symmetric(vertical: 8.0),
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: const BorderSide(color: Colors.grey, width: 1),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    testTypeName,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (languages.isNotEmpty)
+                                    DropdownButtonFormField<String>(
+                                      value: selectedLanguage,
+                                      hint: const Text('Выберите язык'),
+                                      items: languages.map((lang) {
+                                        return DropdownMenuItem<String>(
+                                          value: lang['code'],
+                                          child: Text(lang['name']!),
+                                        );
+                                      }).toList(),
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _selectedLanguages[testTypeId] = value;
+                                        });
+                                      },
+                                      decoration: InputDecoration(
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: const BorderSide(color: Colors.grey),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: const BorderSide(color: Colors.grey),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: const BorderSide(color: Colors.blue, width: 2),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    const Text(
+                                      'Языки загружаются...',
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 20),
+                              onPressed: () {
+                                setState(() {
+                                  _selectedTestTypeIds.remove(testTypeId);
+                                  _selectedLanguages.remove(testTypeId);
+                                  _availableLanguages.remove(testTypeId);
+                                });
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   );
-                },
-                child: const Text('Начать тест'),
+                }).toList(),
               ),
-            ),
-        ],
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -263,16 +352,16 @@ class TestPage extends StatefulWidget {
   final String language;
 
   const TestPage({
-    Key? key,
+    super.key,
     required this.testTypeId,
     required this.language,
-  }) : super(key: key);
+  });
 
   @override
-  _TestPageState createState() => _TestPageState();
+  TestPageState createState() => TestPageState();
 }
 
-class _TestPageState extends State<TestPage> {
+class TestPageState extends State<TestPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   List<DocumentSnapshot> _categories = [];
@@ -285,14 +374,13 @@ class _TestPageState extends State<TestPage> {
   bool _isLoading = true;
   bool _entireTestFinished = false;
 
-  // Lists to store all questions, answers, and category info across categories
   List<DocumentSnapshot> _allQuestions = [];
   List<int?> _allSelectedAnswers = [];
   List<String> _allCorrectAnswers = [];
-  List<String> _categoryNames = []; // Store category names for grouping
-  List<int> _questionsPerCategory = []; // Store the number of questions per category
-  List<double> _pointsPerQuestionByCategory = []; // Store points per question for each category
-  double _totalPoints = 0; // Store the total points
+  List<String> _categoryNames = [];
+  List<int> _questionsPerCategory = [];
+  List<double> _pointsPerQuestionByCategory = [];
+  double _totalPoints = 0;
 
   @override
   void initState() {
@@ -319,10 +407,12 @@ class _TestPageState extends State<TestPage> {
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Нет доступных категорий для этого теста')),
-        );
-        Navigator.pop(context);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Нет доступных категорий для этого теста')),
+          );
+          Navigator.pop(context);
+        }
         return;
       }
 
@@ -331,9 +421,11 @@ class _TestPageState extends State<TestPage> {
       setState(() {
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка загрузки категорий: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки категорий: $e')),
+        );
+      }
     }
   }
 
@@ -391,7 +483,6 @@ class _TestPageState extends State<TestPage> {
         setState(() {
           _isLoading = false;
         });
-        // If no questions in this category, move to the next category or finish
         if (_currentCategoryIndex + 1 < _categories.length) {
           setState(() {
             _currentCategoryIndex++;
@@ -408,7 +499,6 @@ class _TestPageState extends State<TestPage> {
 
       debugPrint('TestPage: Итоговое количество вопросов для теста: ${_questions.length}');
 
-      // Инициализируем _selectedAnswers с количеством вопросов
       _selectedAnswers = List<int?>.filled(_questions.length, null);
 
       if (user != null) {
@@ -435,9 +525,11 @@ class _TestPageState extends State<TestPage> {
       setState(() {
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка загрузки вопросов: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки вопросов: $e')),
+        );
+      }
     }
   }
 
@@ -461,23 +553,22 @@ class _TestPageState extends State<TestPage> {
   }
 
   void _finishCategory() {
-    // Check if all questions have been answered
     if (_selectedAnswers.contains(null)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ответьте на все вопросы перед продолжением')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ответьте на все вопросы перед продолжением')),
+        );
+      }
       return;
     }
 
-    // Accumulate questions and answers for this category
     DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
     String categoryName = categoryDoc['name'] as String;
     double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble();
 
-    // Add category info for grouping later
     _categoryNames.add(categoryName);
     _pointsPerQuestionByCategory.add(pointsPerQuestion);
-    _questionsPerCategory.add(_questions.length); // Store the number of questions in this category
+    _questionsPerCategory.add(_questions.length);
 
     int categoryCorrectAnswers = 0;
     for (int i = 0; i < _questions.length; i++) {
@@ -495,14 +586,11 @@ class _TestPageState extends State<TestPage> {
       }
     }
 
-    // Calculate points for this category and add to total
     double categoryPoints = categoryCorrectAnswers * pointsPerQuestion;
     _totalPoints += categoryPoints;
 
-    // Save category results to test history
     _saveCategoryResult();
 
-    // Check if there are more categories
     if (_currentCategoryIndex + 1 < _categories.length) {
       setState(() {
         _currentCategoryIndex++;
@@ -513,7 +601,7 @@ class _TestPageState extends State<TestPage> {
     }
   }
 
-  void _saveCategoryResult() async {
+  Future<void> _saveCategoryResult() async {
     final user = _auth.currentUser;
     if (user == null) return;
 
@@ -530,6 +618,7 @@ class _TestPageState extends State<TestPage> {
         categoryCorrectAnswers++;
       }
     }
+
     double categoryPoints = categoryCorrectAnswers * pointsPerQuestion;
 
     DocumentSnapshot testTypeDoc = await _firestore.collection('test_types').doc(widget.testTypeId).get();
@@ -549,9 +638,11 @@ class _TestPageState extends State<TestPage> {
   }
 
   void _finishEntireTest() {
-    setState(() {
-      _entireTestFinished = true;
-    });
+    if (mounted) {
+      setState(() {
+        _entireTestFinished = true;
+      });
+    }
   }
 
   @override
@@ -596,13 +687,11 @@ class _TestPageState extends State<TestPage> {
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                // Group questions by category
                 ..._categoryNames.asMap().entries.map((categoryEntry) {
                   int categoryIndex = categoryEntry.key;
                   String categoryName = categoryEntry.value;
                   double pointsPerQuestion = _pointsPerQuestionByCategory[categoryIndex];
 
-                  // Find the range of questions for this category
                   int startIndex = categoryIndex == 0
                       ? 0
                       : _questionsPerCategory
@@ -610,7 +699,6 @@ class _TestPageState extends State<TestPage> {
                           .fold(0, (sum, count) => sum + count);
                   int endIndex = startIndex + _questionsPerCategory[categoryIndex];
 
-                  // Calculate correct answers for this category
                   int categoryCorrectAnswers = 0;
                   for (int i = startIndex; i < endIndex; i++) {
                     String correctAnswer = _allCorrectAnswers[i];
@@ -708,7 +796,6 @@ class _TestPageState extends State<TestPage> {
                           style: const TextStyle(fontSize: 16, color: Colors.red),
                         ),
                         const SizedBox(height: 16),
-                        // Display all questions for the current category
                         ..._questions.asMap().entries.map((entry) {
                           int questionIndex = entry.key;
                           DocumentSnapshot question = entry.value;
@@ -783,7 +870,7 @@ class _TestPageState extends State<TestPage> {
 }
 
 class TrainingPage extends StatelessWidget {
-  const TrainingPage({super.key}); // Use super.key to address the lint warning
+  const TrainingPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -811,7 +898,7 @@ class TrainingPage extends StatelessWidget {
                 return ListView.builder(
                   itemCount: testTypes.length,
                   itemBuilder: (context, index) {
-                    final testType = testTypes[index]; // Fix typo: 'terus' to 'testTypes'
+                    final testType = testTypes[index];
                     final testTypeId = testType.id;
                     final testTypeName = testType['name'] as String;
                     return ExpansionTile(
@@ -867,7 +954,7 @@ class TrainingPage extends StatelessWidget {
 }
 
 class ContestsPage extends StatelessWidget {
-  const ContestsPage({Key? key}) : super(key: key);
+  const ContestsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -948,7 +1035,7 @@ class ContestsPage extends StatelessWidget {
 }
 
 class HistoryPage extends StatelessWidget {
-  const HistoryPage({Key? key}) : super(key: key);
+  const HistoryPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -1046,7 +1133,7 @@ class HistoryPage extends StatelessWidget {
 }
 
 class MyResultsPage extends StatelessWidget {
-  const MyResultsPage({Key? key}) : super(key: key);
+  const MyResultsPage({super.key});
 
   @override
   Widget build(BuildContext context) {

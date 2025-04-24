@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({Key? key}) : super(key: key);
+  const SettingsPage({super.key});
 
   @override
   _SettingsPageState createState() => _SettingsPageState();
@@ -34,10 +34,10 @@ class _SettingsPageState extends State<SettingsPage> {
         DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
         if (userDoc.exists) {
           setState(() {
-            _emailController.text = userDoc['email'] as String;
-            _firstNameController.text = userDoc['first_name'] as String;
-            _selectedTheme = userDoc['theme'] as String;
-            _preferredTests = List<String>.from(userDoc['preferred_tests']);
+            _emailController.text = userDoc['email'] as String? ?? '';
+            _firstNameController.text = userDoc['first_name'] as String? ?? '';
+            _selectedTheme = userDoc['theme'] as String? ?? 'light';
+            _preferredTests = List<String>.from(userDoc['preferred_tests'] ?? []);
             _isLoading = false;
           });
         } else {
@@ -75,22 +75,27 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _updateUserData() async {
     final user = _auth.currentUser;
-    if (user != null) {
-      try {
-        await _firestore.collection('users').doc(user.uid).update({
-          'email': _emailController.text.trim(),
-          'first_name': _firstNameController.text.trim(),
-          'theme': _selectedTheme,
-          'preferred_tests': _preferredTests,
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Данные обновлены')),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка обновления: $e')),
-        );
-      }
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пользователь не авторизован')),
+      );
+      return;
+    }
+
+    try {
+      await _firestore.collection('users').doc(user.uid).update({
+        'email': _emailController.text.trim(),
+        'first_name': _firstNameController.text.trim(),
+        'theme': _selectedTheme ?? 'light',
+        'preferred_tests': _preferredTests,
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Данные обновлены')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка обновления: $e')),
+      );
     }
   }
 
@@ -157,25 +162,31 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text('Выберите виды тестов:'),
-            Wrap(
-              spacing: 8.0,
-              children: _availableTestTypes.map((testType) {
-                return FilterChip(
-                  label: Text(testType),
-                  selected: _preferredTests.contains(testType),
-                  onSelected: (selected) {
-                    setState(() {
-                      if (selected) {
-                        _preferredTests.add(testType);
-                      } else {
-                        _preferredTests.remove(testType);
-                      }
-                    });
-                  },
-                );
-              }).toList(),
+            const Text(
+              'Выберите виды тестов для отображения:',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 8),
+            _availableTestTypes.isEmpty
+                ? const Text('Нет доступных тестов')
+                : Wrap(
+                    spacing: 8.0,
+                    children: _availableTestTypes.map((testType) {
+                      return FilterChip(
+                        label: Text(testType),
+                        selected: _preferredTests.contains(testType),
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              _preferredTests.add(testType);
+                            } else {
+                              _preferredTests.remove(testType);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
             const SizedBox(height: 16),
             Center(
               child: ElevatedButton(
