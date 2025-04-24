@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'settings.dart';
+import 'dart:math';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -79,10 +80,86 @@ class TestSelectionPage extends StatefulWidget {
 
 class _TestSelectionPageState extends State<TestSelectionPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   String? _selectedTestTypeId;
-  String? _selectedCategoryId;
   String? _selectedLanguage;
-  final List<String> _languages = ['ru', 'en', 'ky'];
+  List<String> _availableLanguages = [];
+
+  Future<List<String>> _loadAvailableLanguages(String testTypeId) async {
+    try {
+      QuerySnapshot categoriesSnapshot = await _firestore
+          .collection('test_types')
+          .doc(testTypeId)
+          .collection('categories')
+          .get();
+
+      Set<String> languages = {};
+
+      for (var category in categoriesSnapshot.docs) {
+        QuerySnapshot questionsSnapshot = await _firestore
+            .collection('test_types')
+            .doc(testTypeId)
+            .collection('categories')
+            .doc(category.id)
+            .collection('questions')
+            .get();
+
+        languages.addAll(
+          questionsSnapshot.docs.map((doc) => doc['language'] as String).toSet(),
+        );
+      }
+
+      return languages.toList();
+    } catch (e) {
+      debugPrint('TestSelectionPage: Ошибка загрузки языков: $e');
+      return [];
+    }
+  }
+
+  Future<void> _resetProgress() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пользователь не авторизован')),
+      );
+      return;
+    }
+
+    if (_selectedTestTypeId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Выберите вид теста')),
+      );
+      return;
+    }
+
+    try {
+      QuerySnapshot usedQuestions = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('used_questions')
+          .where('test_type_id', isEqualTo: _selectedTestTypeId)
+          .where('language', isEqualTo: _selectedLanguage)
+          .get();
+
+      for (var doc in usedQuestions.docs) {
+        await doc.reference.delete();
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Прогресс сброшен')),
+      );
+
+      List<String> languages = await _loadAvailableLanguages(_selectedTestTypeId!);
+      setState(() {
+        _availableLanguages = languages;
+        _selectedLanguage = null;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка при сбросе прогресса: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -115,12 +192,18 @@ class _TestSelectionPageState extends State<TestSelectionPage> {
                     child: Text(testType['name']),
                   );
                 }).toList(),
-                onChanged: (value) {
+                onChanged: (value) async {
                   setState(() {
                     _selectedTestTypeId = value;
-                    _selectedCategoryId = null;
                     _selectedLanguage = null;
+                    _availableLanguages = [];
                   });
+                  if (value != null) {
+                    List<String> languages = await _loadAvailableLanguages(value);
+                    setState(() {
+                      _availableLanguages = languages;
+                    });
+                  }
                 },
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
@@ -129,48 +212,11 @@ class _TestSelectionPageState extends State<TestSelectionPage> {
             },
           ),
           const SizedBox(height: 16),
-          if (_selectedTestTypeId != null)
-            StreamBuilder<QuerySnapshot>(
-              stream: _firestore
-                  .collection('test_types')
-                  .doc(_selectedTestTypeId)
-                  .collection('categories')
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Text('Ошибка: ${snapshot.error}');
-                }
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const CircularProgressIndicator();
-                }
-                final categories = snapshot.data!.docs;
-                return DropdownButtonFormField<String>(
-                  value: _selectedCategoryId,
-                  hint: const Text('Выберите категорию'),
-                  items: categories.map((category) {
-                    return DropdownMenuItem<String>(
-                      value: category.id,
-                      child: Text(category['name']),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedCategoryId = value;
-                      _selectedLanguage = null;
-                    });
-                  },
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                  ),
-                );
-              },
-            ),
-          const SizedBox(height: 16),
-          if (_selectedCategoryId != null)
+          if (_selectedTestTypeId != null && _availableLanguages.isNotEmpty)
             DropdownButtonFormField<String>(
               value: _selectedLanguage,
               hint: const Text('Выберите язык'),
-              items: _languages.map((lang) {
+              items: _availableLanguages.map((lang) {
                 return DropdownMenuItem<String>(
                   value: lang,
                   child: Text(lang == 'ru' ? 'Русский' : lang == 'en' ? 'Английский' : 'Кыргызский'),
@@ -185,6 +231,20 @@ class _TestSelectionPageState extends State<TestSelectionPage> {
                 border: OutlineInputBorder(),
               ),
             ),
+          if (_selectedTestTypeId != null && _availableLanguages.isEmpty)
+            const Text(
+              'Нет доступных языков для этого теста',
+              style: TextStyle(color: Colors.red),
+            ),
+          const SizedBox(height: 16),
+          if (_selectedTestTypeId != null)
+            Center(
+              child: ElevatedButton(
+                onPressed: _resetProgress,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text('Сбросить прогресс'),
+              ),
+            ),
           const SizedBox(height: 16),
           if (_selectedLanguage != null)
             Center(
@@ -195,7 +255,6 @@ class _TestSelectionPageState extends State<TestSelectionPage> {
                     MaterialPageRoute(
                       builder: (context) => TestPage(
                         testTypeId: _selectedTestTypeId!,
-                        categoryId: _selectedCategoryId!,
                         language: _selectedLanguage!,
                       ),
                     ),
@@ -212,13 +271,11 @@ class _TestSelectionPageState extends State<TestSelectionPage> {
 
 class TestPage extends StatefulWidget {
   final String testTypeId;
-  final String categoryId;
   final String language;
 
   const TestPage({
     Key? key,
     required this.testTypeId,
-    required this.categoryId,
     required this.language,
   }) : super(key: key);
 
@@ -229,6 +286,8 @@ class TestPage extends StatefulWidget {
 class _TestPageState extends State<TestPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  List<DocumentSnapshot> _categories = [];
+  int _currentCategoryIndex = 0;
   List<DocumentSnapshot> _questions = [];
   int _currentQuestionIndex = 0;
   List<int?> _selectedAnswers = [];
@@ -237,42 +296,70 @@ class _TestPageState extends State<TestPage> {
   int _timeRemaining = 0;
   bool _isLoading = true;
   bool _testFinished = false;
-  bool _timerStarted = false;
 
   @override
   void initState() {
     super.initState();
-    _loadQuestions();
+    _loadCategories();
   }
 
-  Future<void> _loadQuestions() async {
+  Future<void> _loadCategories() async {
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Получаем данные категории (в частности, duration)
-      DocumentSnapshot categoryDoc = await _firestore
+      QuerySnapshot categoriesSnapshot = await _firestore
           .collection('test_types')
           .doc(widget.testTypeId)
           .collection('categories')
-          .doc(widget.categoryId)
+          .orderBy('created_at')
           .get();
-      if (!categoryDoc.exists) {
-        debugPrint('TestPage: Категория не найдена: testTypeId=${widget.testTypeId}, categoryId=${widget.categoryId}');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Категория не найдена')),
-        );
+
+      _categories = categoriesSnapshot.docs;
+
+      if (_categories.isEmpty) {
         setState(() {
           _isLoading = false;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Нет доступных категорий для этого теста')),
+        );
+        Navigator.pop(context);
         return;
       }
-      _duration = (categoryDoc['duration'] as num).toDouble();
-      _timeRemaining = (_duration * 60).toInt();
-      debugPrint('TestPage: Длительность теста: $_duration минут');
 
-      // Получаем использованные вопросы пользователя
+      await _loadQuestionsForCurrentCategory();
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка загрузки категорий: $e')),
+      );
+    }
+  }
+
+  Future<void> _loadQuestionsForCurrentCategory() async {
+    setState(() {
+      _isLoading = true;
+      _questions = [];
+      _currentQuestionIndex = 0;
+      _selectedAnswers = [];
+      _correctAnswers = 0;
+      _testFinished = false;
+    });
+
+    try {
+      DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
+      String categoryId = categoryDoc.id;
+      _duration = (categoryDoc['duration'] as num).toDouble();
+      int numberOfQuestions = (categoryDoc['number_of_questions'] as int? ?? 30);
+      _timeRemaining = (_duration * 60).toInt();
+
+      debugPrint('TestPage: Загрузка вопросов для testTypeId=${widget.testTypeId}, categoryId=$categoryId, language=${widget.language}');
+      debugPrint('TestPage: Количество вопросов для категории: $numberOfQuestions');
+
       List<String> usedQuestionIds = [];
       final user = _auth.currentUser;
       if (user != null) {
@@ -281,36 +368,50 @@ class _TestPageState extends State<TestPage> {
             .doc(user.uid)
             .collection('used_questions')
             .where('test_type_id', isEqualTo: widget.testTypeId)
-            .where('category_id', isEqualTo: widget.categoryId)
+            .where('category_id', isEqualTo: categoryId)
             .where('language', isEqualTo: widget.language)
             .get();
         usedQuestionIds = usedQuestions.docs.map((doc) => doc['question_id'] as String).toList();
         debugPrint('TestPage: Использованные вопросы: $usedQuestionIds');
       }
 
-      // Загружаем вопросы, исключая использованные
       QuerySnapshot questionsSnapshot = await _firestore
           .collection('test_types')
           .doc(widget.testTypeId)
           .collection('categories')
-          .doc(widget.categoryId)
+          .doc(categoryId)
           .collection('questions')
           .where('language', isEqualTo: widget.language)
-          .orderBy('order')
           .get();
 
-      debugPrint('TestPage: Всего вопросов в Firestore: ${questionsSnapshot.docs.length}');
+      debugPrint('TestPage: Всего вопросов в базе: ${questionsSnapshot.docs.length}');
+
       List<DocumentSnapshot> questions = questionsSnapshot.docs
           .where((doc) => !usedQuestionIds.contains(doc.id))
           .toList();
-      debugPrint('TestPage: Доступных вопросов после фильтрации: ${questions.length}');
 
-      // Если вопросов меньше 30, берём все доступные
-      _questions = questions.length > 30 ? questions.sublist(0, 30) : questions;
-      _selectedAnswers = List<int?>.filled(_questions.length, null);
+      debugPrint('TestPage: Доступных вопросов после исключения использованных: ${questions.length}');
 
-      // Сохраняем использованные вопросы
-      if (user != null && _questions.isNotEmpty) {
+      if (questions.isEmpty) {
+        setState(() {
+          _isLoading = false;
+          _testFinished = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Нет доступных вопросов в этой категории. Попробуйте сбросить прогресс.'),
+            duration: Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+
+      questions.shuffle(Random());
+      _questions = questions.length > numberOfQuestions ? questions.sublist(0, numberOfQuestions) : questions;
+
+      debugPrint('TestPage: Итоговое количество вопросов для теста: ${_questions.length}');
+
+      if (user != null) {
         for (var question in _questions) {
           await _firestore
               .collection('users')
@@ -318,35 +419,25 @@ class _TestPageState extends State<TestPage> {
               .collection('used_questions')
               .add({
             'test_type_id': widget.testTypeId,
-            'category_id': widget.categoryId,
+            'category_id': categoryId,
             'language': widget.language,
             'question_id': question.id,
           });
         }
-        debugPrint('TestPage: Сохранены использованные вопросы');
       }
 
       setState(() {
         _isLoading = false;
-        _timerStarted = true;
       });
 
-      if (_questions.isEmpty) {
-        debugPrint('TestPage: Нет доступных вопросов для отображения');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Нет доступных вопросов')),
-        );
-      } else {
-        _startTimer();
-      }
+      _startTimer();
     } catch (e) {
-      debugPrint('TestPage: Ошибка загрузки вопросов: $e');
+      setState(() {
+        _isLoading = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка загрузки вопросов: $e')),
       );
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
 
@@ -397,12 +488,7 @@ class _TestPageState extends State<TestPage> {
       }
     }
 
-    DocumentSnapshot categoryDoc = await _firestore
-        .collection('test_types')
-        .doc(widget.testTypeId)
-        .collection('categories')
-        .doc(widget.categoryId)
-        .get();
+    DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
     double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble();
     double totalPoints = _correctAnswers * pointsPerQuestion;
 
@@ -423,6 +509,18 @@ class _TestPageState extends State<TestPage> {
         'total_time': (_duration * 60).toInt(),
       });
     }
+
+    if (_currentCategoryIndex + 1 < _categories.length) {
+      setState(() {
+        _currentCategoryIndex++;
+      });
+      await _loadQuestionsForCurrentCategory();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Все тесты завершены')),
+      );
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -441,32 +539,68 @@ class _TestPageState extends State<TestPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
-              'Тест завершён!',
+              'Тест по категории завершён!',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Text('Правильных ответов: $_correctAnswers из ${_questions.length}'),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Вернуться'),
-            ),
+            if (_currentCategoryIndex + 1 < _categories.length)
+              ElevatedButton(
+                onPressed: _loadQuestionsForCurrentCategory,
+                child: const Text('Перейти к следующей категории'),
+              )
+            else
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text('Вернуться'),
+              ),
           ],
         ),
       );
     }
 
+    final category = _categories[_currentCategoryIndex];
     final question = _questions[_currentQuestionIndex];
-    final options = List<String>.from(question['options']);
-    final correctAnswer = question['correct_answer'] as int;
+
+    // Добавляем отладочный вывод для проверки содержимого options
+    debugPrint('TestPage: Данные вопроса: ${question.data()}');
+    final rawOptions = question['options'];
+    debugPrint('TestPage: Raw options: $rawOptions');
+    // Проверяем тип элементов в rawOptions
+    if (rawOptions != null && rawOptions is List) {
+      debugPrint('TestPage: Тип первого элемента rawOptions: ${rawOptions.isNotEmpty ? rawOptions[0].runtimeType : "список пуст"}');
+    }
+
+    // Явно преобразуем каждый элемент в строку
+    final options = rawOptions != null && rawOptions is List
+        ? rawOptions.map((option) => option.toString()).toList()
+        : <String>[];
+
+    if (options.isEmpty) {
+      return const Center(
+        child: Text(
+          'Ошибка: Вопрос не содержит вариантов ответа. Обратитесь к администратору.',
+          style: TextStyle(color: Colors.red),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    debugPrint('TestPage: Преобразованные options: $options');
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            'Категория: ${category['name']}',
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
           Text(
             'Вопрос ${_currentQuestionIndex + 1} из ${_questions.length}',
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -485,18 +619,33 @@ class _TestPageState extends State<TestPage> {
           ...options.asMap().entries.map((entry) {
             int index = entry.key;
             String option = entry.value;
-            return RadioListTile<int>(
-              title: Text(option),
-              value: index,
-              groupValue: _selectedAnswers[_currentQuestionIndex],
-              onChanged: (value) => _selectAnswer(value!),
+            return Card(
+              elevation: 2,
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              child: RadioListTile<int>(
+                title: Text(option),
+                value: index,
+                groupValue: _selectedAnswers[_currentQuestionIndex],
+                onChanged: (value) => _selectAnswer(value!),
+              ),
             );
           }).toList(),
           const SizedBox(height: 16),
           Center(
-            child: ElevatedButton(
-              onPressed: _nextQuestion,
-              child: Text(_currentQuestionIndex < _questions.length - 1 ? 'Далее' : 'Завершить'),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: _nextQuestion,
+                  child: Text(_currentQuestionIndex < _questions.length - 1 ? 'Далее' : 'Завершить'),
+                ),
+                const SizedBox(width: 16),
+                if (_currentQuestionIndex == _questions.length - 1)
+                  ElevatedButton(
+                    onPressed: _finishTest,
+                    child: const Text('Закончил тест по этой категории'),
+                  ),
+              ],
             ),
           ),
         ],

@@ -64,7 +64,6 @@ class _AdminPanelPageState extends State<AdminPanelPage> with SingleTickerProvid
   }
 }
 
-// Вкладка "Виды тестов"
 class TestTypesTab extends StatefulWidget {
   const TestTypesTab({Key? key}) : super(key: key);
 
@@ -80,6 +79,7 @@ class _TestTypesTabState extends State<TestTypesTab> {
 
   Future<void> _addOrUpdateTestType() async {
     if (_testTypeNameController.text.isEmpty) {
+      debugPrint('TestTypesTab: Ошибка валидации: Название вида теста пустое');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Введите название вида теста')),
       );
@@ -87,7 +87,25 @@ class _TestTypesTabState extends State<TestTypesTab> {
     }
 
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      debugPrint('TestTypesTab: Ошибка: Пользователь не авторизован');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пользователь не авторизован')),
+      );
+      return;
+    }
+
+    try {
+      IdTokenResult tokenResult = await user.getIdTokenResult(true);
+      debugPrint('TestTypesTab: Токен авторизации: ${tokenResult.token}');
+      debugPrint('TestTypesTab: UID пользователя: ${user.uid}');
+    } catch (e) {
+      debugPrint('TestTypesTab: Ошибка при получении токена: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка авторизации: $e')),
+      );
+      return;
+    }
 
     final data = {
       'name': _testTypeNameController.text.trim(),
@@ -96,13 +114,16 @@ class _TestTypesTabState extends State<TestTypesTab> {
     };
 
     try {
+      debugPrint('TestTypesTab: Попытка сохранить вид теста: $data');
       if (_editingTestTypeId == null) {
         await _firestore.collection('test_types').add(data);
+        debugPrint('TestTypesTab: Вид теста успешно добавлен');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Вид теста добавлен')),
         );
       } else {
         await _firestore.collection('test_types').doc(_editingTestTypeId).update(data);
+        debugPrint('TestTypesTab: Вид теста успешно обновлён');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Вид теста обновлен')),
         );
@@ -112,6 +133,7 @@ class _TestTypesTabState extends State<TestTypesTab> {
       }
       _testTypeNameController.clear();
     } catch (e) {
+      debugPrint('TestTypesTab: Ошибка при сохранении: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка: $e')),
       );
@@ -121,10 +143,12 @@ class _TestTypesTabState extends State<TestTypesTab> {
   Future<void> _deleteTestType(String testTypeId) async {
     try {
       await _firestore.collection('test_types').doc(testTypeId).delete();
+      debugPrint('TestTypesTab: Вид теста успешно удалён');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Вид теста удален')),
       );
     } catch (e) {
+      debugPrint('TestTypesTab: Ошибка при удалении: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка при удалении: $e')),
       );
@@ -237,7 +261,6 @@ class _TestTypesTabState extends State<TestTypesTab> {
   }
 }
 
-// Вкладка "Категории"
 class CategoriesTab extends StatefulWidget {
   const CategoriesTab({Key? key}) : super(key: key);
 
@@ -251,6 +274,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
   final TextEditingController _categoryNameController = TextEditingController();
   final TextEditingController _durationController = TextEditingController();
   final TextEditingController _pointsController = TextEditingController();
+  final TextEditingController _numberOfQuestionsController = TextEditingController();
   String? _selectedTestTypeId;
   List<String> _selectedLanguages = [];
   String? _editingCategoryId;
@@ -258,7 +282,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
   final List<String> _languages = ['ru', 'en', 'ky'];
 
   Future<void> _addOrUpdateCategory() async {
-    // Проверка заполненности полей
     if (_selectedTestTypeId == null) {
       debugPrint('CategoriesTab: Ошибка валидации: _selectedTestTypeId is null');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -287,6 +310,13 @@ class _CategoriesTabState extends State<CategoriesTab> {
       );
       return;
     }
+    if (_numberOfQuestionsController.text.isEmpty) {
+      debugPrint('CategoriesTab: Ошибка валидации: Кол-во вопросов пустое');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Введите количество вопросов')),
+      );
+      return;
+    }
     if (_selectedLanguages.isEmpty) {
       debugPrint('CategoriesTab: Ошибка валидации: Языки не выбраны');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -305,14 +335,23 @@ class _CategoriesTabState extends State<CategoriesTab> {
     }
 
     try {
-      // Парсим время и баллы как double
       final duration = double.parse(_durationController.text);
       final points = double.parse(_pointsController.text);
+      final numberOfQuestions = int.parse(_numberOfQuestionsController.text);
+
+      if (numberOfQuestions <= 0) {
+        debugPrint('CategoriesTab: Ошибка валидации: Кол-во вопросов должно быть больше 0');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Количество вопросов должно быть больше 0')),
+        );
+        return;
+      }
 
       final data = {
         'name': _categoryNameController.text.trim(),
         'duration': duration,
         'points_per_question': points,
+        'number_of_questions': numberOfQuestions,
         'languages': _selectedLanguages,
         'created_by': user.uid,
         'created_at': DateTime.now().toIso8601String(),
@@ -348,6 +387,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
       _categoryNameController.clear();
       _durationController.clear();
       _pointsController.clear();
+      _numberOfQuestionsController.clear();
       _selectedLanguages.clear();
     } catch (e) {
       debugPrint('CategoriesTab: Ошибка при сохранении категории: $e');
@@ -383,6 +423,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
       _categoryNameController.text = category['name'];
       _durationController.text = category['duration'].toString();
       _pointsController.text = category['points_per_question'].toString();
+      _numberOfQuestionsController.text = category['number_of_questions'].toString();
       _selectedLanguages = List<String>.from(category['languages']);
     });
   }
@@ -392,6 +433,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
     _categoryNameController.dispose();
     _durationController.dispose();
     _pointsController.dispose();
+    _numberOfQuestionsController.dispose();
     super.dispose();
   }
 
@@ -407,7 +449,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
-          // Выбор вида теста
           StreamBuilder<QuerySnapshot>(
             stream: _firestore.collection('test_types').snapshots(),
             builder: (context, snapshot) {
@@ -434,6 +475,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
                     _categoryNameController.clear();
                     _durationController.clear();
                     _pointsController.clear();
+                    _numberOfQuestionsController.clear();
                     _selectedLanguages.clear();
                   });
                 },
@@ -467,6 +509,15 @@ class _CategoriesTabState extends State<CategoriesTab> {
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: 'Баллы за вопрос',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _numberOfQuestionsController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Количество вопросов',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -506,6 +557,7 @@ class _CategoriesTabState extends State<CategoriesTab> {
                         _categoryNameController.clear();
                         _durationController.clear();
                         _pointsController.clear();
+                        _numberOfQuestionsController.clear();
                         _selectedLanguages.clear();
                       });
                     },
@@ -542,11 +594,12 @@ class _CategoriesTabState extends State<CategoriesTab> {
                       final categoryName = category['name'] as String;
                       final duration = category['duration'] as double;
                       final points = category['points_per_question'] as double;
+                      final numberOfQuestions = category['number_of_questions'] as int;
                       final languages = List<String>.from(category['languages']);
                       return ListTile(
                         title: Text(categoryName),
                         subtitle: Text(
-                          'Время: $duration мин, Баллы: $points, Языки: ${languages.join(", ")}',
+                          'Время: $duration мин, Баллы: $points, Вопросов: $numberOfQuestions, Языки: ${languages.join(", ")}',
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -574,7 +627,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
   }
 }
 
-// Вкладка "Вопросы"
 class QuestionsTab extends StatefulWidget {
   const QuestionsTab({Key? key}) : super(key: key);
 
@@ -587,7 +639,7 @@ class _QuestionsTabState extends State<QuestionsTab> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final TextEditingController _questionTextController = TextEditingController();
   final List<TextEditingController> _optionControllers = List.generate(4, (_) => TextEditingController());
-  final TextEditingController _orderController = TextEditingController();
+  final TextEditingController _explanationController = TextEditingController();
   String? _selectedTestTypeId;
   String? _selectedCategoryId;
   String? _selectedLanguage;
@@ -602,10 +654,9 @@ class _QuestionsTabState extends State<QuestionsTab> {
         _selectedLanguage == null ||
         _questionTextController.text.isEmpty ||
         _optionControllers.any((controller) => controller.text.isEmpty) ||
-        _correctAnswerIndex == null ||
-        _orderController.text.isEmpty) {
+        _correctAnswerIndex == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Заполните все поля')),
+        const SnackBar(content: Text('Заполните все обязательные поля')),
       );
       return;
     }
@@ -618,7 +669,7 @@ class _QuestionsTabState extends State<QuestionsTab> {
       'text': _questionTextController.text.trim(),
       'options': _optionControllers.map((controller) => controller.text.trim()).toList(),
       'correct_answer': _correctAnswerIndex,
-      'order': int.parse(_orderController.text),
+      'explanation': _explanationController.text.trim(),
       'created_by': user.uid,
       'created_at': DateTime.now().toIso8601String(),
     };
@@ -655,7 +706,7 @@ class _QuestionsTabState extends State<QuestionsTab> {
       for (var controller in _optionControllers) {
         controller.clear();
       }
-      _orderController.clear();
+      _explanationController.clear();
       _correctAnswerIndex = null;
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -694,7 +745,7 @@ class _QuestionsTabState extends State<QuestionsTab> {
         _optionControllers[i].text = options[i];
       }
       _correctAnswerIndex = question['correct_answer'];
-      _orderController.text = question['order'].toString();
+      _explanationController.text = question['explanation'] ?? '';
     });
   }
 
@@ -704,7 +755,7 @@ class _QuestionsTabState extends State<QuestionsTab> {
     for (var controller in _optionControllers) {
       controller.dispose();
     }
-    _orderController.dispose();
+    _explanationController.dispose();
     super.dispose();
   }
 
@@ -721,7 +772,6 @@ class _QuestionsTabState extends State<QuestionsTab> {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            // Выбор вида теста
             StreamBuilder<QuerySnapshot>(
               stream: _firestore.collection('test_types').snapshots(),
               builder: (context, snapshot) {
@@ -751,7 +801,7 @@ class _QuestionsTabState extends State<QuestionsTab> {
                       for (var controller in _optionControllers) {
                         controller.clear();
                       }
-                      _orderController.clear();
+                      _explanationController.clear();
                       _correctAnswerIndex = null;
                     });
                   },
@@ -762,7 +812,6 @@ class _QuestionsTabState extends State<QuestionsTab> {
               },
             ),
             const SizedBox(height: 16),
-            // Выбор категории
             if (_selectedTestTypeId != null)
               StreamBuilder<QuerySnapshot>(
                 stream: _firestore
@@ -796,7 +845,7 @@ class _QuestionsTabState extends State<QuestionsTab> {
                         for (var controller in _optionControllers) {
                           controller.clear();
                         }
-                        _orderController.clear();
+                        _explanationController.clear();
                         _correctAnswerIndex = null;
                       });
                     },
@@ -867,12 +916,12 @@ class _QuestionsTabState extends State<QuestionsTab> {
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: _orderController,
-                keyboardType: TextInputType.number,
+                controller: _explanationController,
                 decoration: const InputDecoration(
-                  labelText: 'Порядок вопроса',
+                  labelText: 'Объяснение',
                   border: OutlineInputBorder(),
                 ),
+                maxLines: 3,
               ),
               const SizedBox(height: 16),
               Row(
@@ -892,7 +941,7 @@ class _QuestionsTabState extends State<QuestionsTab> {
                           for (var controller in _optionControllers) {
                             controller.clear();
                           }
-                          _orderController.clear();
+                          _explanationController.clear();
                           _correctAnswerIndex = null;
                         });
                       },
@@ -933,11 +982,11 @@ class _QuestionsTabState extends State<QuestionsTab> {
                       final options = List<String>.from(question['options']);
                       final correctAnswer = question['correct_answer'] as int;
                       final language = question['language'] as String;
-                      final order = question['order'] as int;
+                      final explanation = question['explanation'] as String? ?? 'Нет объяснения';
                       return ListTile(
                         title: Text(questionText),
                         subtitle: Text(
-                          'Язык: $language, Правильный: ${options[correctAnswer]}, Порядок: $order',
+                          'Язык: $language, Правильный: ${options[correctAnswer]}, Объяснение: $explanation',
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -965,7 +1014,6 @@ class _QuestionsTabState extends State<QuestionsTab> {
   }
 }
 
-// Вкладка "Контесты"
 class ContestsTab extends StatefulWidget {
   const ContestsTab({Key? key}) : super(key: key);
 
@@ -1207,7 +1255,6 @@ class _ContestsTabState extends State<ContestsTab> {
   }
 }
 
-// Вкладка "Обучающие материалы"
 class StudyMaterialsTab extends StatefulWidget {
   const StudyMaterialsTab({Key? key}) : super(key: key);
 
