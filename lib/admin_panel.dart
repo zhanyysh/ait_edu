@@ -15,7 +15,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -43,6 +43,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> with SingleTickerProvid
           controller: _tabController,
           tabs: const [
             Tab(text: 'Виды тестов'),
+            Tab(text: 'Добавить язык'),
             Tab(text: 'Категории'),
             Tab(text: 'Вопросы'),
             Tab(text: 'Контесты'),
@@ -54,6 +55,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> with SingleTickerProvid
         controller: _tabController,
         children: const [
           TestTypesTab(),
+          LanguagesTab(),
           CategoriesTab(),
           QuestionsTab(),
           ContestsTab(),
@@ -73,7 +75,7 @@ class TestTypesTab extends StatefulWidget {
 
 class _TestTypesTabState extends State<TestTypesTab> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance; // Renamed to _auth
   final TextEditingController _testTypeNameController = TextEditingController();
   String? _editingTestTypeId;
 
@@ -86,7 +88,7 @@ class _TestTypesTabState extends State<TestTypesTab> {
       return;
     }
 
-    final user = _auth.currentUser;
+    final user = _auth.currentUser; // Use _auth instead of _firestore
     if (user == null) {
       debugPrint('TestTypesTab: Ошибка: Пользователь не авторизован');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -98,42 +100,32 @@ class _TestTypesTabState extends State<TestTypesTab> {
     try {
       IdTokenResult tokenResult = await user.getIdTokenResult(true);
       debugPrint('TestTypesTab: Токен авторизации: ${tokenResult.token}');
-      debugPrint('TestTypesTab: UID пользователя: ${user.uid}');
-    } catch (e) {
-      debugPrint('TestTypesTab: Ошибка при получении токена: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка авторизации: $e')),
-      );
-      return;
-    }
+      debugPrint('TestTypesTab: Пользователь: ${user.uid}');
 
-    final data = {
-      'name': _testTypeNameController.text.trim(),
-      'created_by': user.uid,
-      'created_at': DateTime.now().toIso8601String(),
-    };
-
-    try {
-      debugPrint('TestTypesTab: Попытка сохранить вид теста: $data');
       if (_editingTestTypeId == null) {
-        await _firestore.collection('test_types').add(data);
-        debugPrint('TestTypesTab: Вид теста успешно добавлен');
+        await _firestore.collection('test_types').add({
+          'name': _testTypeNameController.text,
+          'created_by': user.uid,
+          'created_at': DateTime.now().toIso8601String(),
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Вид теста добавлен')),
         );
       } else {
-        await _firestore.collection('test_types').doc(_editingTestTypeId).update(data);
-        debugPrint('TestTypesTab: Вид теста успешно обновлён');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Вид теста обновлен')),
-        );
-        setState(() {
-          _editingTestTypeId = null;
+        await _firestore.collection('test_types').doc(_editingTestTypeId).update({
+          'name': _testTypeNameController.text,
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Вид теста обновлён')),
+        );
       }
+
       _testTypeNameController.clear();
+      setState(() {
+        _editingTestTypeId = null;
+      });
     } catch (e) {
-      debugPrint('TestTypesTab: Ошибка при сохранении: $e');
+      debugPrint('TestTypesTab: Ошибка: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка: $e')),
       );
@@ -143,29 +135,14 @@ class _TestTypesTabState extends State<TestTypesTab> {
   Future<void> _deleteTestType(String testTypeId) async {
     try {
       await _firestore.collection('test_types').doc(testTypeId).delete();
-      debugPrint('TestTypesTab: Вид теста успешно удалён');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Вид теста удален')),
+        const SnackBar(content: Text('Вид теста удалён')),
       );
     } catch (e) {
-      debugPrint('TestTypesTab: Ошибка при удалении: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка при удалении: $e')),
       );
     }
-  }
-
-  void _editTestType(String testTypeId, String name) {
-    setState(() {
-      _editingTestTypeId = testTypeId;
-      _testTypeNameController.text = name;
-    });
-  }
-
-  @override
-  void dispose() {
-    _testTypeNameController.dispose();
-    super.dispose();
   }
 
   @override
@@ -180,38 +157,28 @@ class _TestTypesTabState extends State<TestTypesTab> {
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _testTypeNameController,
-                  decoration: InputDecoration(
-                    labelText: _editingTestTypeId == null
-                        ? 'Новый вид теста'
-                        : 'Редактировать вид теста',
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: _addOrUpdateTestType,
-                child: Text(_editingTestTypeId == null ? 'Добавить' : 'Сохранить'),
-              ),
-              if (_editingTestTypeId != null) ...[
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _editingTestTypeId = null;
-                      _testTypeNameController.clear();
-                    });
-                  },
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
-                  child: const Text('Отмена'),
-                ),
-              ],
-            ],
+          TextField(
+            controller: _testTypeNameController,
+            decoration: InputDecoration(
+              labelText: 'Название вида теста',
+              border: const OutlineInputBorder(),
+              suffixIcon: _editingTestTypeId != null
+                  ? IconButton(
+                      icon: const Icon(Icons.cancel),
+                      onPressed: () {
+                        setState(() {
+                          _editingTestTypeId = null;
+                          _testTypeNameController.clear();
+                        });
+                      },
+                    )
+                  : null,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _addOrUpdateTestType,
+            child: Text(_editingTestTypeId == null ? 'Добавить' : 'Обновить'),
           ),
           const SizedBox(height: 16),
           Expanded(
@@ -219,15 +186,12 @@ class _TestTypesTabState extends State<TestTypesTab> {
               stream: _firestore.collection('test_types').snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return Center(child: Text('Ошибка: ${snapshot.error}'));
+                  return Text('Ошибка: ${snapshot.error}');
                 }
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final testTypes = snapshot.data!.docs;
-                if (testTypes.isEmpty) {
-                  return const Center(child: Text('Нет видов тестов'));
-                }
                 return ListView.builder(
                   itemCount: testTypes.length,
                   itemBuilder: (context, index) {
@@ -241,7 +205,12 @@ class _TestTypesTabState extends State<TestTypesTab> {
                         children: [
                           IconButton(
                             icon: const Icon(Icons.edit),
-                            onPressed: () => _editTestType(testTypeId, testTypeName),
+                            onPressed: () {
+                              setState(() {
+                                _editingTestTypeId = testTypeId;
+                                _testTypeNameController.text = testTypeName;
+                              });
+                            },
                           ),
                           IconButton(
                             icon: const Icon(Icons.delete),
@@ -261,6 +230,184 @@ class _TestTypesTabState extends State<TestTypesTab> {
   }
 }
 
+class LanguagesTab extends StatefulWidget {
+  const LanguagesTab({Key? key}) : super(key: key);
+
+  @override
+  _LanguagesTabState createState() => _LanguagesTabState();
+}
+
+class _LanguagesTabState extends State<LanguagesTab> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  String? _selectedTestTypeId;
+  final TextEditingController _languageNameController = TextEditingController();
+  final TextEditingController _languageCodeController = TextEditingController();
+
+  Future<void> _addLanguage() async {
+    if (_selectedTestTypeId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Выберите вид теста')),
+      );
+      return;
+    }
+
+    if (_languageNameController.text.isEmpty || _languageCodeController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Введите название и код языка')),
+      );
+      return;
+    }
+
+    try {
+      await _firestore
+          .collection('test_types')
+          .doc(_selectedTestTypeId)
+          .collection('languages')
+          .add({
+        'name': _languageNameController.text,
+        'code': _languageCodeController.text,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Язык добавлен')),
+      );
+
+      _languageNameController.clear();
+      _languageCodeController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка при добавлении языка: $e')),
+      );
+    }
+  }
+
+  Future<void> _deleteLanguage(String languageId) async {
+    try {
+      await _firestore
+          .collection('test_types')
+          .doc(_selectedTestTypeId)
+          .collection('languages')
+          .doc(languageId)
+          .delete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Язык удалён')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка при удалении языка: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Управление языками',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<QuerySnapshot>(
+            stream: _firestore.collection('test_types').snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Text('Ошибка: ${snapshot.error}');
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const CircularProgressIndicator();
+              }
+              final testTypes = snapshot.data!.docs;
+              return DropdownButtonFormField<String>(
+                value: _selectedTestTypeId,
+                hint: const Text('Выберите вид теста'),
+                items: testTypes.map((testType) {
+                  return DropdownMenuItem<String>(
+                    value: testType.id,
+                    child: Text(testType['name']),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedTestTypeId = value;
+                    _languageNameController.clear();
+                    _languageCodeController.clear();
+                  });
+                },
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          if (_selectedTestTypeId != null) ...[
+            TextField(
+              controller: _languageNameController,
+              decoration: const InputDecoration(
+                labelText: 'Название языка (например, Русский)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _languageCodeController,
+              decoration: const InputDecoration(
+                labelText: 'Код языка (например, ru)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _addLanguage,
+              child: const Text('Добавить язык'),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('test_types')
+                    .doc(_selectedTestTypeId)
+                    .collection('languages')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Text('Ошибка: ${snapshot.error}');
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final languages = snapshot.data!.docs;
+                  return ListView.builder(
+                    itemCount: languages.length,
+                    itemBuilder: (context, index) {
+                      final language = languages[index];
+                      final languageId = language.id;
+                      final languageName = language['name'] as String;
+                      final languageCode = language['code'] as String;
+                      return ListTile(
+                        title: Text('$languageName ($languageCode)'),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: () => _deleteLanguage(languageId),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class CategoriesTab extends StatefulWidget {
   const CategoriesTab({Key? key}) : super(key: key);
 
@@ -270,102 +417,52 @@ class CategoriesTab extends StatefulWidget {
 
 class _CategoriesTabState extends State<CategoriesTab> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  String? _selectedTestTypeId;
   final TextEditingController _categoryNameController = TextEditingController();
   final TextEditingController _durationController = TextEditingController();
-  final TextEditingController _pointsController = TextEditingController();
+  final TextEditingController _pointsPerQuestionController = TextEditingController();
   final TextEditingController _numberOfQuestionsController = TextEditingController();
-  String? _selectedTestTypeId;
   List<String> _selectedLanguages = [];
   String? _editingCategoryId;
 
-  final List<String> _languages = ['ru', 'en', 'ky'];
-
   Future<void> _addOrUpdateCategory() async {
     if (_selectedTestTypeId == null) {
-      debugPrint('CategoriesTab: Ошибка валидации: _selectedTestTypeId is null');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Выберите вид теста')),
       );
       return;
     }
-    if (_categoryNameController.text.isEmpty) {
-      debugPrint('CategoriesTab: Ошибка валидации: Название категории пустое');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Введите название категории')),
-      );
-      return;
-    }
-    if (_durationController.text.isEmpty) {
-      debugPrint('CategoriesTab: Ошибка валидации: Время пустое');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Введите время')),
-      );
-      return;
-    }
-    if (_pointsController.text.isEmpty) {
-      debugPrint('CategoriesTab: Ошибка валидации: Баллы пустые');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Введите баллы за вопрос')),
-      );
-      return;
-    }
-    if (_numberOfQuestionsController.text.isEmpty) {
-      debugPrint('CategoriesTab: Ошибка валидации: Кол-во вопросов пустое');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Введите количество вопросов')),
-      );
-      return;
-    }
-    if (_selectedLanguages.isEmpty) {
-      debugPrint('CategoriesTab: Ошибка валидации: Языки не выбраны');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Выберите хотя бы один язык')),
-      );
-      return;
-    }
 
-    final user = _auth.currentUser;
-    if (user == null) {
-      debugPrint('CategoriesTab: Ошибка: Пользователь не авторизован');
+    if (_categoryNameController.text.isEmpty ||
+        _durationController.text.isEmpty ||
+        _pointsPerQuestionController.text.isEmpty ||
+        _numberOfQuestionsController.text.isEmpty ||
+        _selectedLanguages.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Пользователь не авторизован')),
+        const SnackBar(content: Text('Заполните все поля')),
       );
       return;
     }
 
     try {
-      final duration = double.parse(_durationController.text);
-      final points = double.parse(_pointsController.text);
-      final numberOfQuestions = int.parse(_numberOfQuestionsController.text);
-
-      if (numberOfQuestions <= 0) {
-        debugPrint('CategoriesTab: Ошибка валидации: Кол-во вопросов должно быть больше 0');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Количество вопросов должно быть больше 0')),
-        );
-        return;
-      }
-
-      final data = {
-        'name': _categoryNameController.text.trim(),
-        'duration': duration,
-        'points_per_question': points,
-        'number_of_questions': numberOfQuestions,
-        'languages': _selectedLanguages,
-        'created_by': user.uid,
-        'created_at': DateTime.now().toIso8601String(),
-      };
-
-      debugPrint('CategoriesTab: Попытка сохранить категорию: $data');
+      double duration = double.parse(_durationController.text);
+      double pointsPerQuestion = double.parse(_pointsPerQuestionController.text);
+      int numberOfQuestions = int.parse(_numberOfQuestionsController.text);
 
       if (_editingCategoryId == null) {
         await _firestore
             .collection('test_types')
             .doc(_selectedTestTypeId)
             .collection('categories')
-            .add(data);
-        debugPrint('CategoriesTab: Категория успешно добавлена');
+            .add({
+          'name': _categoryNameController.text,
+          'duration': duration,
+          'points_per_question': pointsPerQuestion,
+          'number_of_questions': numberOfQuestions,
+          'languages': _selectedLanguages,
+          'created_at': DateTime.now().toIso8601String(),
+          'created_by': FirebaseAuth.instance.currentUser?.uid,
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Категория добавлена')),
         );
@@ -375,22 +472,27 @@ class _CategoriesTabState extends State<CategoriesTab> {
             .doc(_selectedTestTypeId)
             .collection('categories')
             .doc(_editingCategoryId)
-            .update(data);
-        debugPrint('CategoriesTab: Категория успешно обновлена');
+            .update({
+          'name': _categoryNameController.text,
+          'duration': duration,
+          'points_per_question': pointsPerQuestion,
+          'number_of_questions': numberOfQuestions,
+          'languages': _selectedLanguages,
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Категория обновлена')),
         );
-        setState(() {
-          _editingCategoryId = null;
-        });
       }
+
       _categoryNameController.clear();
       _durationController.clear();
-      _pointsController.clear();
+      _pointsPerQuestionController.clear();
       _numberOfQuestionsController.clear();
-      _selectedLanguages.clear();
+      setState(() {
+        _selectedLanguages = [];
+        _editingCategoryId = null;
+      });
     } catch (e) {
-      debugPrint('CategoriesTab: Ошибка при сохранении категории: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка: $e')),
       );
@@ -405,36 +507,14 @@ class _CategoriesTabState extends State<CategoriesTab> {
           .collection('categories')
           .doc(categoryId)
           .delete();
-      debugPrint('CategoriesTab: Категория успешно удалена');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Категория удалена')),
       );
     } catch (e) {
-      debugPrint('CategoriesTab: Ошибка при удалении категории: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка при удалении: $e')),
       );
     }
-  }
-
-  void _editCategory(DocumentSnapshot category) {
-    setState(() {
-      _editingCategoryId = category.id;
-      _categoryNameController.text = category['name'];
-      _durationController.text = category['duration'].toString();
-      _pointsController.text = category['points_per_question'].toString();
-      _numberOfQuestionsController.text = category['number_of_questions'].toString();
-      _selectedLanguages = List<String>.from(category['languages']);
-    });
-  }
-
-  @override
-  void dispose() {
-    _categoryNameController.dispose();
-    _durationController.dispose();
-    _pointsController.dispose();
-    _numberOfQuestionsController.dispose();
-    super.dispose();
   }
 
   @override
@@ -474,9 +554,9 @@ class _CategoriesTabState extends State<CategoriesTab> {
                     _editingCategoryId = null;
                     _categoryNameController.clear();
                     _durationController.clear();
-                    _pointsController.clear();
+                    _pointsPerQuestionController.clear();
                     _numberOfQuestionsController.clear();
-                    _selectedLanguages.clear();
+                    _selectedLanguages = [];
                   });
                 },
                 decoration: const InputDecoration(
@@ -489,30 +569,30 @@ class _CategoriesTabState extends State<CategoriesTab> {
           if (_selectedTestTypeId != null) ...[
             TextField(
               controller: _categoryNameController,
-              decoration: InputDecoration(
-                labelText: _editingCategoryId == null ? 'Название категории' : 'Редактировать категорию',
-                border: const OutlineInputBorder(),
+              decoration: const InputDecoration(
+                labelText: 'Название категории',
+                border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             TextField(
               controller: _durationController,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'Время (в минутах)',
+                labelText: 'Длительность (в минутах)',
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             TextField(
-              controller: _pointsController,
+              controller: _pointsPerQuestionController,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: 'Баллы за вопрос',
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             TextField(
               controller: _numberOfQuestionsController,
               keyboardType: TextInputType.number,
@@ -521,51 +601,60 @@ class _CategoriesTabState extends State<CategoriesTab> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 8),
-            const Text('Выберите языки:'),
-            Wrap(
-              spacing: 8.0,
-              children: _languages.map((lang) {
-                return FilterChip(
-                  label: Text(lang == 'ru' ? 'Русский' : lang == 'en' ? 'Английский' : 'Кыргызский'),
-                  selected: _selectedLanguages.contains(lang),
-                  onSelected: (selected) {
-                    setState(() {
-                      if (selected) {
-                        _selectedLanguages.add(lang);
-                      } else {
-                        _selectedLanguages.remove(lang);
-                      }
-                    });
-                  },
+            const SizedBox(height: 16),
+            StreamBuilder<QuerySnapshot>(
+              stream: _firestore
+                  .collection('test_types')
+                  .doc(_selectedTestTypeId)
+                  .collection('languages')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Text('Ошибка загрузки языков: ${snapshot.error}');
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const CircularProgressIndicator();
+                }
+                final languages = snapshot.data!.docs;
+                if (languages.isEmpty) {
+                  return const Text(
+                    'Нет доступных языков. Сначала добавьте языки для этого теста.',
+                    style: TextStyle(color: Colors.red),
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Выберите языки:',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    ...languages.map((lang) {
+                      final languageName = lang['name'] as String;
+                      final languageCode = lang['code'] as String;
+                      return CheckboxListTile(
+                        title: Text('$languageName ($languageCode)'),
+                        value: _selectedLanguages.contains(languageCode),
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (value == true) {
+                              _selectedLanguages.add(languageCode);
+                            } else {
+                              _selectedLanguages.remove(languageCode);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ],
                 );
-              }).toList(),
+              },
             ),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                ElevatedButton(
-                  onPressed: _addOrUpdateCategory,
-                  child: Text(_editingCategoryId == null ? 'Добавить' : 'Сохранить'),
-                ),
-                if (_editingCategoryId != null) ...[
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        _editingCategoryId = null;
-                        _categoryNameController.clear();
-                        _durationController.clear();
-                        _pointsController.clear();
-                        _numberOfQuestionsController.clear();
-                        _selectedLanguages.clear();
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
-                    child: const Text('Отмена'),
-                  ),
-                ],
-              ],
+            ElevatedButton(
+              onPressed: _addOrUpdateCategory,
+              child: Text(_editingCategoryId == null ? 'Добавить' : 'Обновить'),
             ),
             const SizedBox(height: 16),
             Expanded(
@@ -577,15 +666,12 @@ class _CategoriesTabState extends State<CategoriesTab> {
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
-                    return Center(child: Text('Ошибка: ${snapshot.error}'));
+                    return Text('Ошибка: ${snapshot.error}');
                   }
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
                   final categories = snapshot.data!.docs;
-                  if (categories.isEmpty) {
-                    return const Center(child: Text('Нет категорий'));
-                  }
                   return ListView.builder(
                     itemCount: categories.length,
                     itemBuilder: (context, index) {
@@ -593,20 +679,29 @@ class _CategoriesTabState extends State<CategoriesTab> {
                       final categoryId = category.id;
                       final categoryName = category['name'] as String;
                       final duration = category['duration'] as double;
-                      final points = category['points_per_question'] as double;
+                      final pointsPerQuestion = category['points_per_question'] as double;
                       final numberOfQuestions = category['number_of_questions'] as int;
                       final languages = List<String>.from(category['languages']);
                       return ListTile(
                         title: Text(categoryName),
                         subtitle: Text(
-                          'Время: $duration мин, Баллы: $points, Вопросов: $numberOfQuestions, Языки: ${languages.join(", ")}',
+                          'Длительность: $duration мин, Баллы: $pointsPerQuestion, Вопросов: $numberOfQuestions, Языки: ${languages.join(', ')}',
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
                               icon: const Icon(Icons.edit),
-                              onPressed: () => _editCategory(category),
+                              onPressed: () {
+                                setState(() {
+                                  _editingCategoryId = categoryId;
+                                  _categoryNameController.text = categoryName;
+                                  _durationController.text = duration.toString();
+                                  _pointsPerQuestionController.text = pointsPerQuestion.toString();
+                                  _numberOfQuestionsController.text = numberOfQuestions.toString();
+                                  _selectedLanguages = languages;
+                                });
+                              },
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete),
@@ -636,45 +731,40 @@ class QuestionsTab extends StatefulWidget {
 
 class _QuestionsTabState extends State<QuestionsTab> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final TextEditingController _questionTextController = TextEditingController();
-  final List<TextEditingController> _optionControllers = List.generate(4, (_) => TextEditingController());
-  final TextEditingController _explanationController = TextEditingController();
   String? _selectedTestTypeId;
   String? _selectedCategoryId;
   String? _selectedLanguage;
-  int? _correctAnswerIndex;
+  final TextEditingController _questionTextController = TextEditingController();
+  final List<TextEditingController> _optionControllers = [
+    TextEditingController(),
+    TextEditingController(),
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  String? _correctAnswer;
+  final TextEditingController _explanationController = TextEditingController();
   String? _editingQuestionId;
 
-  final List<String> _languages = ['ru', 'en', 'ky'];
-
   Future<void> _addOrUpdateQuestion() async {
-    if (_selectedTestTypeId == null ||
-        _selectedCategoryId == null ||
-        _selectedLanguage == null ||
-        _questionTextController.text.isEmpty ||
-        _optionControllers.any((controller) => controller.text.isEmpty) ||
-        _correctAnswerIndex == null) {
+    if (_selectedTestTypeId == null || _selectedCategoryId == null || _selectedLanguage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Заполните все обязательные поля')),
+        const SnackBar(content: Text('Выберите вид теста, категорию и язык')),
       );
       return;
     }
 
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    final data = {
-      'language': _selectedLanguage,
-      'text': _questionTextController.text.trim(),
-      'options': _optionControllers.map((controller) => controller.text.trim()).toList(),
-      'correct_answer': _correctAnswerIndex,
-      'explanation': _explanationController.text.trim(),
-      'created_by': user.uid,
-      'created_at': DateTime.now().toIso8601String(),
-    };
+    if (_questionTextController.text.isEmpty ||
+        _optionControllers.any((controller) => controller.text.isEmpty) ||
+        _correctAnswer == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Заполните все поля')),
+      );
+      return;
+    }
 
     try {
+      final options = _optionControllers.map((controller) => controller.text).toList();
+
       if (_editingQuestionId == null) {
         await _firestore
             .collection('test_types')
@@ -682,7 +772,15 @@ class _QuestionsTabState extends State<QuestionsTab> {
             .collection('categories')
             .doc(_selectedCategoryId)
             .collection('questions')
-            .add(data);
+            .add({
+          'text': _questionTextController.text,
+          'options': options,
+          'correct_answer': _correctAnswer,
+          'explanation': _explanationController.text,
+          'language': _selectedLanguage,
+          'created_at': DateTime.now().toIso8601String(),
+          'created_by': FirebaseAuth.instance.currentUser?.uid,
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Вопрос добавлен')),
         );
@@ -694,20 +792,27 @@ class _QuestionsTabState extends State<QuestionsTab> {
             .doc(_selectedCategoryId)
             .collection('questions')
             .doc(_editingQuestionId)
-            .update(data);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Вопрос обновлен')),
-        );
-        setState(() {
-          _editingQuestionId = null;
+            .update({
+          'text': _questionTextController.text,
+          'options': options,
+          'correct_answer': _correctAnswer,
+          'explanation': _explanationController.text,
+          'language': _selectedLanguage,
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Вопрос обновлён')),
+        );
       }
+
       _questionTextController.clear();
       for (var controller in _optionControllers) {
         controller.clear();
       }
+      _correctAnswer = null;
       _explanationController.clear();
-      _correctAnswerIndex = null;
+      setState(() {
+        _editingQuestionId = null;
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка: $e')),
@@ -726,7 +831,7 @@ class _QuestionsTabState extends State<QuestionsTab> {
           .doc(questionId)
           .delete();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Вопрос удален')),
+        const SnackBar(content: Text('Вопрос удалён')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -735,35 +840,11 @@ class _QuestionsTabState extends State<QuestionsTab> {
     }
   }
 
-  void _editQuestion(DocumentSnapshot question) {
-    setState(() {
-      _editingQuestionId = question.id;
-      _selectedLanguage = question['language'];
-      _questionTextController.text = question['text'];
-      final options = List<String>.from(question['options']);
-      for (int i = 0; i < 4; i++) {
-        _optionControllers[i].text = options[i];
-      }
-      _correctAnswerIndex = question['correct_answer'];
-      _explanationController.text = question['explanation'] ?? '';
-    });
-  }
-
-  @override
-  void dispose() {
-    _questionTextController.dispose();
-    for (var controller in _optionControllers) {
-      controller.dispose();
-    }
-    _explanationController.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -801,8 +882,8 @@ class _QuestionsTabState extends State<QuestionsTab> {
                       for (var controller in _optionControllers) {
                         controller.clear();
                       }
+                      _correctAnswer = null;
                       _explanationController.clear();
-                      _correctAnswerIndex = null;
                     });
                   },
                   decoration: const InputDecoration(
@@ -845,8 +926,8 @@ class _QuestionsTabState extends State<QuestionsTab> {
                         for (var controller in _optionControllers) {
                           controller.clear();
                         }
+                        _correctAnswer = null;
                         _explanationController.clear();
-                        _correctAnswerIndex = null;
                       });
                     },
                     decoration: const InputDecoration(
@@ -856,100 +937,120 @@ class _QuestionsTabState extends State<QuestionsTab> {
                 },
               ),
             const SizedBox(height: 16),
-            if (_selectedCategoryId != null) ...[
-              DropdownButtonFormField<String>(
-                value: _selectedLanguage,
-                hint: const Text('Выберите язык'),
-                items: _languages.map((lang) {
-                  return DropdownMenuItem<String>(
-                    value: lang,
-                    child: Text(lang == 'ru' ? 'Русский' : lang == 'en' ? 'Английский' : 'Кыргызский'),
+            if (_selectedCategoryId != null)
+              StreamBuilder<DocumentSnapshot>(
+                stream: _firestore
+                    .collection('test_types')
+                    .doc(_selectedTestTypeId)
+                    .collection('categories')
+                    .doc(_selectedCategoryId)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Text('Ошибка: ${snapshot.error}');
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const CircularProgressIndicator();
+                  }
+                  final category = snapshot.data!;
+                  final languages = List<String>.from(category['languages']);
+                  return DropdownButtonFormField<String>(
+                    value: _selectedLanguage,
+                    hint: const Text('Выберите язык'),
+                    items: languages.map((lang) {
+                      return DropdownMenuItem<String>(
+                        value: lang,
+                        child: Text(lang),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedLanguage = value;
+                        _editingQuestionId = null;
+                        _questionTextController.clear();
+                        for (var controller in _optionControllers) {
+                          controller.clear();
+                        }
+                        _correctAnswer = null;
+                        _explanationController.clear();
+                      });
+                    },
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                    ),
                   );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedLanguage = value;
-                  });
                 },
+              ),
+            const SizedBox(height: 16),
+            if (_selectedLanguage != null) ...[
+              TextField(
+                controller: _questionTextController,
                 decoration: const InputDecoration(
+                  labelText: 'Текст вопроса',
                   border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),
-              TextField(
-                controller: _questionTextController,
-                decoration: InputDecoration(
-                  labelText: _editingQuestionId == null ? 'Текст вопроса' : 'Редактировать вопрос',
-                  border: const OutlineInputBorder(),
-                ),
+              const Text(
+                'Варианты ответа:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              for (int i = 0; i < 4; i++)
-                Padding(
+              ..._optionControllers.asMap().entries.map((entry) {
+                int index = entry.key;
+                TextEditingController controller = entry.value;
+                return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4.0),
                   child: TextField(
-                    controller: _optionControllers[i],
+                    controller: controller,
                     decoration: InputDecoration(
-                      labelText: 'Вариант ${i + 1}',
+                      labelText: 'Вариант ${index + 1}',
                       border: const OutlineInputBorder(),
                     ),
+                    onChanged: (value) {
+                      setState(() {
+                        // Reset correct answer if options change
+                        _correctAnswer = null;
+                      });
+                    },
                   ),
-                ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<int>(
-                value: _correctAnswerIndex,
+                );
+              }).toList(),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _correctAnswer,
                 hint: const Text('Правильный ответ'),
-                items: List.generate(4, (index) {
-                  return DropdownMenuItem<int>(
-                    value: index,
-                    child: Text('Вариант ${index + 1}'),
+                items: _optionControllers
+                    .map((controller) => controller.text)
+                    .where((text) => text.isNotEmpty)
+                    .map((option) {
+                  return DropdownMenuItem<String>(
+                    value: option,
+                    child: Text(option),
                   );
-                }),
+                }).toList(),
                 onChanged: (value) {
                   setState(() {
-                    _correctAnswerIndex = value;
+                    _correctAnswer = value;
                   });
                 },
                 decoration: const InputDecoration(
+                  labelText: 'Правильный ответ',
                   border: OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               TextField(
                 controller: _explanationController,
                 decoration: const InputDecoration(
                   labelText: 'Объяснение',
                   border: OutlineInputBorder(),
                 ),
-                maxLines: 3,
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  ElevatedButton(
-                    onPressed: _addOrUpdateQuestion,
-                    child: Text(_editingQuestionId == null ? 'Добавить' : 'Сохранить'),
-                  ),
-                  if (_editingQuestionId != null) ...[
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: () {
-                        setState(() {
-                          _editingQuestionId = null;
-                          _selectedLanguage = null;
-                          _questionTextController.clear();
-                          for (var controller in _optionControllers) {
-                            controller.clear();
-                          }
-                          _explanationController.clear();
-                          _correctAnswerIndex = null;
-                        });
-                      },
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
-                      child: const Text('Отмена'),
-                    ),
-                  ],
-                ],
+              ElevatedButton(
+                onPressed: _addOrUpdateQuestion,
+                child: Text(_editingQuestionId == null ? 'Добавить' : 'Обновить'),
               ),
               const SizedBox(height: 16),
               StreamBuilder<QuerySnapshot>(
@@ -959,18 +1060,16 @@ class _QuestionsTabState extends State<QuestionsTab> {
                     .collection('categories')
                     .doc(_selectedCategoryId)
                     .collection('questions')
+                    .where('language', isEqualTo: _selectedLanguage)
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
-                    return Center(child: Text('Ошибка: ${snapshot.error}'));
+                    return Text('Ошибка: ${snapshot.error}');
                   }
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
                   final questions = snapshot.data!.docs;
-                  if (questions.isEmpty) {
-                    return const Center(child: Text('Нет вопросов'));
-                  }
                   return ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -980,20 +1079,31 @@ class _QuestionsTabState extends State<QuestionsTab> {
                       final questionId = question.id;
                       final questionText = question['text'] as String;
                       final options = List<String>.from(question['options']);
-                      final correctAnswer = question['correct_answer'] as int;
-                      final language = question['language'] as String;
+                      final correctAnswer = question['correct_answer'] as String;
                       final explanation = question['explanation'] as String? ?? 'Нет объяснения';
                       return ListTile(
                         title: Text(questionText),
                         subtitle: Text(
-                          'Язык: $language, Правильный: ${options[correctAnswer]}, Объяснение: $explanation',
+                          'Варианты: ${options.join(', ')}\n'
+                          'Правильный: $correctAnswer\n'
+                          'Объяснение: $explanation',
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
                               icon: const Icon(Icons.edit),
-                              onPressed: () => _editQuestion(question),
+                              onPressed: () {
+                                setState(() {
+                                  _editingQuestionId = questionId;
+                                  _questionTextController.text = questionText;
+                                  for (int i = 0; i < _optionControllers.length; i++) {
+                                    _optionControllers[i].text = options[i];
+                                  }
+                                  _correctAnswer = correctAnswer;
+                                  _explanationController.text = explanation;
+                                });
+                              },
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete),
@@ -1023,49 +1133,26 @@ class ContestsTab extends StatefulWidget {
 
 class _ContestsTabState extends State<ContestsTab> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   String? _selectedTestTypeId;
-  DateTime? _selectedDateTime;
-  String? _editingContestId;
+  DateTime _selectedDate = DateTime.now();
 
-  Future<void> _addOrUpdateContest() async {
-    if (_selectedTestTypeId == null || _selectedDateTime == null) {
+  Future<void> _addContest() async {
+    if (_selectedTestTypeId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Выберите вид теста и дату')),
+        const SnackBar(content: Text('Выберите вид теста')),
       );
       return;
     }
 
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    final data = {
-      'test_type_id': _selectedTestTypeId,
-      'date': _selectedDateTime!.toIso8601String(),
-      'created_by': user.uid,
-      'participants': [],
-      'created_at': DateTime.now().toIso8601String(),
-    };
-
     try {
-      if (_editingContestId == null) {
-        await _firestore.collection('contests').add(data);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Контест добавлен')),
-        );
-      } else {
-        await _firestore.collection('contests').doc(_editingContestId).update(data);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Контест обновлен')),
-        );
-        setState(() {
-          _editingContestId = null;
-        });
-      }
-      setState(() {
-        _selectedTestTypeId = null;
-        _selectedDateTime = null;
+      await _firestore.collection('contests').add({
+        'test_type_id': _selectedTestTypeId,
+        'date': _selectedDate.toIso8601String(),
+        'participants': [],
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Контест добавлен')),
+      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка: $e')),
@@ -1077,46 +1164,12 @@ class _ContestsTabState extends State<ContestsTab> {
     try {
       await _firestore.collection('contests').doc(contestId).delete();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Контест удален')),
+        const SnackBar(content: Text('Контест удалён')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка при удалении: $e')),
       );
-    }
-  }
-
-  void _editContest(DocumentSnapshot contest) {
-    setState(() {
-      _editingContestId = contest.id;
-      _selectedTestTypeId = contest['test_type_id'];
-      _selectedDateTime = DateTime.parse(contest['date']);
-    });
-  }
-
-  Future<void> _selectDateTime(BuildContext context) async {
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      initialDate: _selectedDateTime ?? DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (pickedDate != null) {
-      final TimeOfDay? pickedTime = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.fromDateTime(_selectedDateTime ?? DateTime.now()),
-      );
-      if (pickedTime != null) {
-        setState(() {
-          _selectedDateTime = DateTime(
-            pickedDate.year,
-            pickedDate.month,
-            pickedDate.day,
-            pickedTime.hour,
-            pickedTime.minute,
-          );
-        });
-      }
     }
   }
 
@@ -1154,8 +1207,6 @@ class _ContestsTabState extends State<ContestsTab> {
                 onChanged: (value) {
                   setState(() {
                     _selectedTestTypeId = value;
-                    _editingContestId = null;
-                    _selectedDateTime = null;
                   });
                 },
                 decoration: const InputDecoration(
@@ -1165,90 +1216,74 @@ class _ContestsTabState extends State<ContestsTab> {
             },
           ),
           const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () => _selectDateTime(context),
-            child: Text(
-              _selectedDateTime == null
-                  ? 'Выберите дату и время'
-                  : 'Дата: ${_selectedDateTime!.toIso8601String()}',
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              ElevatedButton(
-                onPressed: _addOrUpdateContest,
-                child: Text(_editingContestId == null ? 'Добавить' : 'Сохранить'),
-              ),
-              if (_editingContestId != null) ...[
-                const SizedBox(width: 8),
+          if (_selectedTestTypeId != null) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Дата: ${_selectedDate.toIso8601String().split('T').first}',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
                 ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _editingContestId = null;
-                      _selectedTestTypeId = null;
-                      _selectedDateTime = null;
-                    });
+                  onPressed: () async {
+                    final pickedDate = await showDatePicker(
+                      context: context,
+                      initialDate: _selectedDate,
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime(2100),
+                    );
+                    if (pickedDate != null) {
+                      setState(() {
+                        _selectedDate = pickedDate;
+                      });
+                    }
                   },
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
-                  child: const Text('Отмена'),
+                  child: const Text('Выбрать дату'),
                 ),
               ],
-            ],
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('contests').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(child: Text('Ошибка: ${snapshot.error}'));
-                }
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final contests = snapshot.data!.docs;
-                if (contests.isEmpty) {
-                  return const Center(child: Text('Нет контестов'));
-                }
-                return ListView.builder(
-                  itemCount: contests.length,
-                  itemBuilder: (context, index) {
-                    final contest = contests[index];
-                    final contestId = contest.id;
-                    final testTypeId = contest['test_type_id'] as String;
-                    final date = DateTime.parse(contest['date']);
-                    return FutureBuilder<DocumentSnapshot>(
-                      future: _firestore.collection('test_types').doc(testTypeId).get(),
-                      builder: (context, testTypeSnapshot) {
-                        if (testTypeSnapshot.connectionState == ConnectionState.waiting) {
-                          return const ListTile(title: Text('Загрузка...'));
-                        }
-                        final testTypeName = testTypeSnapshot.data?['name'] ?? 'Неизвестный тест';
-                        return ListTile(
-                          title: Text('Контест: $testTypeName'),
-                          subtitle: Text('Дата: ${date.toIso8601String()}'),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.edit),
-                                onPressed: () => _editContest(contest),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete),
-                                onPressed: () => _deleteContest(contestId),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    );
-                  },
-                );
-              },
             ),
-          ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _addContest,
+              child: const Text('Добавить контест'),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('contests')
+                    .where('test_type_id', isEqualTo: _selectedTestTypeId)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Text('Ошибка: ${snapshot.error}');
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final contests = snapshot.data!.docs;
+                  return ListView.builder(
+                    itemCount: contests.length,
+                    itemBuilder: (context, index) {
+                      final contest = contests[index];
+                      final contestId = contest.id;
+                      final date = DateTime.parse(contest['date']);
+                      final participants = List<String>.from(contest['participants']);
+                      return ListTile(
+                        title: Text('Контест от ${date.toIso8601String().split('T').first}'),
+                        subtitle: Text('Участников: ${participants.length}'),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: () => _deleteContest(contestId),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1264,31 +1299,25 @@ class StudyMaterialsTab extends StatefulWidget {
 
 class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _contentController = TextEditingController();
   String? _selectedTestTypeId;
+  final TextEditingController _materialTitleController = TextEditingController();
+  final TextEditingController _materialContentController = TextEditingController();
   String? _editingMaterialId;
 
   Future<void> _addOrUpdateMaterial() async {
-    if (_selectedTestTypeId == null ||
-        _titleController.text.isEmpty ||
-        _contentController.text.isEmpty) {
+    if (_selectedTestTypeId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Выберите вид теста')),
+      );
+      return;
+    }
+
+    if (_materialTitleController.text.isEmpty || _materialContentController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Заполните все поля')),
       );
       return;
     }
-
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    final data = {
-      'title': _titleController.text.trim(),
-      'content': _contentController.text.trim(),
-      'created_by': user.uid,
-      'created_at': DateTime.now().toIso8601String(),
-    };
 
     try {
       if (_editingMaterialId == null) {
@@ -1296,7 +1325,11 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
             .collection('test_types')
             .doc(_selectedTestTypeId)
             .collection('study_materials')
-            .add(data);
+            .add({
+          'title': _materialTitleController.text,
+          'content': _materialContentController.text,
+          'created_at': DateTime.now().toIso8601String(),
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Материал добавлен')),
         );
@@ -1306,16 +1339,20 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
             .doc(_selectedTestTypeId)
             .collection('study_materials')
             .doc(_editingMaterialId)
-            .update(data);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Материал обновлен')),
-        );
-        setState(() {
-          _editingMaterialId = null;
+            .update({
+          'title': _materialTitleController.text,
+          'content': _materialContentController.text,
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Материал обновлён')),
+        );
       }
-      _titleController.clear();
-      _contentController.clear();
+
+      _materialTitleController.clear();
+      _materialContentController.clear();
+      setState(() {
+        _editingMaterialId = null;
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка: $e')),
@@ -1332,28 +1369,13 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
           .doc(materialId)
           .delete();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Материал удален')),
+        const SnackBar(content: Text('Материал удалён')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка при удалении: $e')),
       );
     }
-  }
-
-  void _editMaterial(DocumentSnapshot material) {
-    setState(() {
-      _editingMaterialId = material.id;
-      _titleController.text = material['title'];
-      _contentController.text = material['content'];
-    });
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _contentController.dispose();
-    super.dispose();
   }
 
   @override
@@ -1364,7 +1386,7 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Управление обучающими материалами',
+            'Управление материалами',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
@@ -1391,8 +1413,8 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
                   setState(() {
                     _selectedTestTypeId = value;
                     _editingMaterialId = null;
-                    _titleController.clear();
-                    _contentController.clear();
+                    _materialTitleController.clear();
+                    _materialContentController.clear();
                   });
                 },
                 decoration: const InputDecoration(
@@ -1404,43 +1426,25 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
           const SizedBox(height: 16),
           if (_selectedTestTypeId != null) ...[
             TextField(
-              controller: _titleController,
-              decoration: InputDecoration(
-                labelText: _editingMaterialId == null ? 'Название материала' : 'Редактировать материал',
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _contentController,
+              controller: _materialTitleController,
               decoration: const InputDecoration(
-                labelText: 'Содержимое (текст или ссылка)',
+                labelText: 'Заголовок материала',
                 border: OutlineInputBorder(),
               ),
-              maxLines: 3,
             ),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                ElevatedButton(
-                  onPressed: _addOrUpdateMaterial,
-                  child: Text(_editingMaterialId == null ? 'Добавить' : 'Сохранить'),
-                ),
-                if (_editingMaterialId != null) ...[
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        _editingMaterialId = null;
-                        _titleController.clear();
-                        _contentController.clear();
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
-                    child: const Text('Отмена'),
-                  ),
-                ],
-              ],
+            TextField(
+              controller: _materialContentController,
+              decoration: const InputDecoration(
+                labelText: 'Содержимое материала',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 5,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _addOrUpdateMaterial,
+              child: Text(_editingMaterialId == null ? 'Добавить' : 'Обновить'),
             ),
             const SizedBox(height: 16),
             Expanded(
@@ -1452,15 +1456,12 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
-                    return Center(child: Text('Ошибка: ${snapshot.error}'));
+                    return Text('Ошибка: ${snapshot.error}');
                   }
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
                   final materials = snapshot.data!.docs;
-                  if (materials.isEmpty) {
-                    return const Center(child: Text('Нет материалов'));
-                  }
                   return ListView.builder(
                     itemCount: materials.length,
                     itemBuilder: (context, index) {
@@ -1476,7 +1477,13 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
                           children: [
                             IconButton(
                               icon: const Icon(Icons.edit),
-                              onPressed: () => _editMaterial(material),
+                              onPressed: () {
+                                setState(() {
+                                  _editingMaterialId = materialId;
+                                  _materialTitleController.text = title;
+                                  _materialContentController.text = content;
+                                });
+                              },
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete),

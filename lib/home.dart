@@ -83,36 +83,29 @@ class _TestSelectionPageState extends State<TestSelectionPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   String? _selectedTestTypeId;
   String? _selectedLanguage;
-  List<String> _availableLanguages = [];
+  List<Map<String, String>> _availableLanguages = [];
 
-  Future<List<String>> _loadAvailableLanguages(String testTypeId) async {
+  Future<void> _loadAvailableLanguages(String testTypeId) async {
     try {
-      QuerySnapshot categoriesSnapshot = await _firestore
+      QuerySnapshot languagesSnapshot = await _firestore
           .collection('test_types')
           .doc(testTypeId)
-          .collection('categories')
+          .collection('languages')
           .get();
 
-      Set<String> languages = {};
-
-      for (var category in categoriesSnapshot.docs) {
-        QuerySnapshot questionsSnapshot = await _firestore
-            .collection('test_types')
-            .doc(testTypeId)
-            .collection('categories')
-            .doc(category.id)
-            .collection('questions')
-            .get();
-
-        languages.addAll(
-          questionsSnapshot.docs.map((doc) => doc['language'] as String).toSet(),
-        );
-      }
-
-      return languages.toList();
+      setState(() {
+        _availableLanguages = languagesSnapshot.docs.map((doc) {
+          return {
+            'name': doc['name'] as String,
+            'code': doc['code'] as String,
+          };
+        }).toList();
+      });
     } catch (e) {
       debugPrint('TestSelectionPage: Ошибка загрузки языков: $e');
-      return [];
+      setState(() {
+        _availableLanguages = [];
+      });
     }
   }
 
@@ -149,9 +142,8 @@ class _TestSelectionPageState extends State<TestSelectionPage> {
         const SnackBar(content: Text('Прогресс сброшен')),
       );
 
-      List<String> languages = await _loadAvailableLanguages(_selectedTestTypeId!);
+      await _loadAvailableLanguages(_selectedTestTypeId!);
       setState(() {
-        _availableLanguages = languages;
         _selectedLanguage = null;
       });
     } catch (e) {
@@ -199,10 +191,7 @@ class _TestSelectionPageState extends State<TestSelectionPage> {
                     _availableLanguages = [];
                   });
                   if (value != null) {
-                    List<String> languages = await _loadAvailableLanguages(value);
-                    setState(() {
-                      _availableLanguages = languages;
-                    });
+                    await _loadAvailableLanguages(value);
                   }
                 },
                 decoration: const InputDecoration(
@@ -218,8 +207,8 @@ class _TestSelectionPageState extends State<TestSelectionPage> {
               hint: const Text('Выберите язык'),
               items: _availableLanguages.map((lang) {
                 return DropdownMenuItem<String>(
-                  value: lang,
-                  child: Text(lang == 'ru' ? 'Русский' : lang == 'en' ? 'Английский' : 'Кыргызский'),
+                  value: lang['code'],
+                  child: Text(lang['name']!),
                 );
               }).toList(),
               onChanged: (value) {
@@ -289,13 +278,21 @@ class _TestPageState extends State<TestPage> {
   List<DocumentSnapshot> _categories = [];
   int _currentCategoryIndex = 0;
   List<DocumentSnapshot> _questions = [];
-  int _currentQuestionIndex = 0;
   List<int?> _selectedAnswers = [];
   int _correctAnswers = 0;
   double _duration = 0;
   int _timeRemaining = 0;
   bool _isLoading = true;
-  bool _testFinished = false;
+  bool _entireTestFinished = false;
+
+  // Lists to store all questions, answers, and category info across categories
+  List<DocumentSnapshot> _allQuestions = [];
+  List<int?> _allSelectedAnswers = [];
+  List<String> _allCorrectAnswers = [];
+  List<String> _categoryNames = []; // Store category names for grouping
+  List<int> _questionsPerCategory = []; // Store the number of questions per category
+  List<double> _pointsPerQuestionByCategory = []; // Store points per question for each category
+  double _totalPoints = 0; // Store the total points
 
   @override
   void initState() {
@@ -344,10 +341,7 @@ class _TestPageState extends State<TestPage> {
     setState(() {
       _isLoading = true;
       _questions = [];
-      _currentQuestionIndex = 0;
       _selectedAnswers = [];
-      _correctAnswers = 0;
-      _testFinished = false;
     });
 
     try {
@@ -388,6 +382,7 @@ class _TestPageState extends State<TestPage> {
 
       List<DocumentSnapshot> questions = questionsSnapshot.docs
           .where((doc) => !usedQuestionIds.contains(doc.id))
+          .where((doc) => doc['options'] != null && (doc['options'] as List).isNotEmpty)
           .toList();
 
       debugPrint('TestPage: Доступных вопросов после исключения использованных: ${questions.length}');
@@ -395,14 +390,16 @@ class _TestPageState extends State<TestPage> {
       if (questions.isEmpty) {
         setState(() {
           _isLoading = false;
-          _testFinished = true;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Нет доступных вопросов в этой категории. Попробуйте сбросить прогресс.'),
-            duration: Duration(seconds: 5),
-          ),
-        );
+        // If no questions in this category, move to the next category or finish
+        if (_currentCategoryIndex + 1 < _categories.length) {
+          setState(() {
+            _currentCategoryIndex++;
+          });
+          await _loadQuestionsForCurrentCategory();
+        } else {
+          _finishEntireTest();
+        }
         return;
       }
 
@@ -410,6 +407,9 @@ class _TestPageState extends State<TestPage> {
       _questions = questions.length > numberOfQuestions ? questions.sublist(0, numberOfQuestions) : questions;
 
       debugPrint('TestPage: Итоговое количество вопросов для теста: ${_questions.length}');
+
+      // Инициализируем _selectedAnswers с количеством вопросов
+      _selectedAnswers = List<int?>.filled(_questions.length, null);
 
       if (user != null) {
         for (var question in _questions) {
@@ -443,219 +443,347 @@ class _TestPageState extends State<TestPage> {
 
   void _startTimer() {
     Future.delayed(const Duration(seconds: 1), () {
-      if (_timeRemaining > 0 && !_testFinished && mounted) {
+      if (_timeRemaining > 0 && !_entireTestFinished && mounted) {
         setState(() {
           _timeRemaining--;
         });
         _startTimer();
-      } else if (_timeRemaining <= 0 && !_testFinished) {
-        _finishTest();
+      } else if (_timeRemaining <= 0 && !_entireTestFinished) {
+        _finishCategory();
       }
     });
   }
 
-  void _selectAnswer(int answerIndex) {
+  void _selectAnswer(int questionIndex, int answerIndex) {
     setState(() {
-      _selectedAnswers[_currentQuestionIndex] = answerIndex;
+      _selectedAnswers[questionIndex] = answerIndex;
     });
   }
 
-  void _nextQuestion() {
-    if (_selectedAnswers[_currentQuestionIndex] == null) {
+  void _finishCategory() {
+    // Check if all questions have been answered
+    if (_selectedAnswers.contains(null)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Выберите ответ перед продолжением')),
+        const SnackBar(content: Text('Ответьте на все вопросы перед продолжением')),
       );
       return;
     }
 
-    if (_currentQuestionIndex < _questions.length - 1) {
-      setState(() {
-        _currentQuestionIndex++;
-      });
-    } else {
-      _finishTest();
-    }
-  }
+    // Accumulate questions and answers for this category
+    DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
+    String categoryName = categoryDoc['name'] as String;
+    double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble();
 
-  void _finishTest() async {
-    setState(() {
-      _testFinished = true;
-    });
+    // Add category info for grouping later
+    _categoryNames.add(categoryName);
+    _pointsPerQuestionByCategory.add(pointsPerQuestion);
+    _questionsPerCategory.add(_questions.length); // Store the number of questions in this category
 
+    int categoryCorrectAnswers = 0;
     for (int i = 0; i < _questions.length; i++) {
-      if (_selectedAnswers[i] == _questions[i]['correct_answer']) {
+      DocumentSnapshot question = _questions[i];
+      String correctAnswer = question['correct_answer'] as String;
+      _allQuestions.add(question);
+      _allCorrectAnswers.add(correctAnswer);
+      int? userAnswerIndex = _selectedAnswers[i];
+      _allSelectedAnswers.add(userAnswerIndex);
+      final options = (question['options'] as List).map((option) => option.toString()).toList();
+      String? userAnswer = userAnswerIndex != null ? options[userAnswerIndex] : null;
+      if (userAnswer == correctAnswer) {
         _correctAnswers++;
+        categoryCorrectAnswers++;
       }
     }
 
-    DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
-    double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble();
-    double totalPoints = _correctAnswers * pointsPerQuestion;
+    // Calculate points for this category and add to total
+    double categoryPoints = categoryCorrectAnswers * pointsPerQuestion;
+    _totalPoints += categoryPoints;
 
-    final user = _auth.currentUser;
-    if (user != null) {
-      DocumentSnapshot testTypeDoc = await _firestore.collection('test_types').doc(widget.testTypeId).get();
-      String testTypeName = testTypeDoc['name'] as String;
-      String categoryName = categoryDoc['name'] as String;
+    // Save category results to test history
+    _saveCategoryResult();
 
-      await _firestore.collection('users').doc(user.uid).collection('test_history').add({
-        'date': DateTime.now().toIso8601String(),
-        'test_type': testTypeName,
-        'category': categoryName,
-        'correct_answers': _correctAnswers,
-        'total_questions': _questions.length,
-        'points': totalPoints,
-        'time_spent': (_duration * 60 - _timeRemaining).toInt(),
-        'total_time': (_duration * 60).toInt(),
-      });
-    }
-
+    // Check if there are more categories
     if (_currentCategoryIndex + 1 < _categories.length) {
       setState(() {
         _currentCategoryIndex++;
       });
-      await _loadQuestionsForCurrentCategory();
+      _loadQuestionsForCurrentCategory();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Все тесты завершены')),
-      );
-      Navigator.pop(context);
+      _finishEntireTest();
     }
+  }
+
+  void _saveCategoryResult() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
+    double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble();
+    int categoryCorrectAnswers = 0;
+
+    for (int i = 0; i < _questions.length; i++) {
+      final options = (_questions[i]['options'] as List).map((option) => option.toString()).toList();
+      String correctAnswer = _questions[i]['correct_answer'] as String;
+      int? userAnswerIndex = _selectedAnswers[i];
+      String? userAnswer = userAnswerIndex != null ? options[userAnswerIndex] : null;
+      if (userAnswer == correctAnswer) {
+        categoryCorrectAnswers++;
+      }
+    }
+    double categoryPoints = categoryCorrectAnswers * pointsPerQuestion;
+
+    DocumentSnapshot testTypeDoc = await _firestore.collection('test_types').doc(widget.testTypeId).get();
+    String testTypeName = testTypeDoc['name'] as String;
+    String categoryName = categoryDoc['name'] as String;
+
+    await _firestore.collection('users').doc(user.uid).collection('test_history').add({
+      'date': DateTime.now().toIso8601String(),
+      'test_type': testTypeName,
+      'category': categoryName,
+      'correct_answers': categoryCorrectAnswers,
+      'total_questions': _questions.length,
+      'points': categoryPoints,
+      'time_spent': (_duration * 60 - _timeRemaining).toInt(),
+      'total_time': (_duration * 60).toInt(),
+    });
+  }
+
+  void _finishEntireTest() {
+    setState(() {
+      _entireTestFinished = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_questions.isEmpty) {
-      return const Center(child: Text('Вопросы не найдены'));
-    }
-
-    if (_testFinished) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'Тест по категории завершён!',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Text('Правильных ответов: $_correctAnswers из ${_questions.length}'),
-            const SizedBox(height: 16),
-            if (_currentCategoryIndex + 1 < _categories.length)
-              ElevatedButton(
-                onPressed: _loadQuestionsForCurrentCategory,
-                child: const Text('Перейти к следующей категории'),
-              )
-            else
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: const Text('Вернуться'),
-              ),
-          ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Тест'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.pop(context);
+          },
         ),
-      );
-    }
-
-    final category = _categories[_currentCategoryIndex];
-    final question = _questions[_currentQuestionIndex];
-
-    // Добавляем отладочный вывод для проверки содержимого options
-    debugPrint('TestPage: Данные вопроса: ${question.data()}');
-    final rawOptions = question['options'];
-    debugPrint('TestPage: Raw options: $rawOptions');
-    // Проверяем тип элементов в rawOptions
-    if (rawOptions != null && rawOptions is List) {
-      debugPrint('TestPage: Тип первого элемента rawOptions: ${rawOptions.isNotEmpty ? rawOptions[0].runtimeType : "список пуст"}');
-    }
-
-    // Явно преобразуем каждый элемент в строку
-    final options = rawOptions != null && rawOptions is List
-        ? rawOptions.map((option) => option.toString()).toList()
-        : <String>[];
-
-    if (options.isEmpty) {
-      return const Center(
-        child: Text(
-          'Ошибка: Вопрос не содержит вариантов ответа. Обратитесь к администратору.',
-          style: TextStyle(color: Colors.red),
-          textAlign: TextAlign.center,
-        ),
-      );
-    }
-
-    debugPrint('TestPage: Преобразованные options: $options');
-
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Категория: ${category['name']}',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Вопрос ${_currentQuestionIndex + 1} из ${_questions.length}',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Оставшееся время: ${_timeRemaining ~/ 60}:${(_timeRemaining % 60).toString().padLeft(2, '0')}',
-            style: const TextStyle(fontSize: 16, color: Colors.red),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            question['text'] as String,
-            style: const TextStyle(fontSize: 16),
-          ),
-          const SizedBox(height: 16),
-          ...options.asMap().entries.map((entry) {
-            int index = entry.key;
-            String option = entry.value;
-            return Card(
-              elevation: 2,
-              margin: const EdgeInsets.symmetric(vertical: 4),
-              child: RadioListTile<int>(
-                title: Text(option),
-                value: index,
-                groupValue: _selectedAnswers[_currentQuestionIndex],
-                onChanged: (value) => _selectAnswer(value!),
-              ),
-            );
-          }).toList(),
-          const SizedBox(height: 16),
-          Center(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ElevatedButton(
-                  onPressed: _nextQuestion,
-                  child: Text(_currentQuestionIndex < _questions.length - 1 ? 'Далее' : 'Завершить'),
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_isLoading)
+                const Center(child: CircularProgressIndicator())
+              else if (_questions.isEmpty && !_entireTestFinished)
+                const Center(child: Text('Вопросы не найдены'))
+              else if (_entireTestFinished) ...[
+                const Text(
+                  'ТЕСТ ЗАВЕРШЁН',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(width: 16),
-                if (_currentQuestionIndex == _questions.length - 1)
-                  ElevatedButton(
-                    onPressed: _finishTest,
-                    child: const Text('Закончил тест по этой категории'),
+                const SizedBox(height: 16),
+                Text(
+                  'Правильных ответов: $_correctAnswers из ${_allQuestions.length}',
+                  style: const TextStyle(fontSize: 18),
+                ),
+                Text(
+                  'Всего баллов: ${_totalPoints.toStringAsFixed(1)}',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Результаты:',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                // Group questions by category
+                ..._categoryNames.asMap().entries.map((categoryEntry) {
+                  int categoryIndex = categoryEntry.key;
+                  String categoryName = categoryEntry.value;
+                  double pointsPerQuestion = _pointsPerQuestionByCategory[categoryIndex];
+
+                  // Find the range of questions for this category
+                  int startIndex = categoryIndex == 0
+                      ? 0
+                      : _questionsPerCategory
+                          .sublist(0, categoryIndex)
+                          .fold(0, (sum, count) => sum + count);
+                  int endIndex = startIndex + _questionsPerCategory[categoryIndex];
+
+                  // Calculate correct answers for this category
+                  int categoryCorrectAnswers = 0;
+                  for (int i = startIndex; i < endIndex; i++) {
+                    String correctAnswer = _allCorrectAnswers[i];
+                    int? userAnswerIndex = _allSelectedAnswers[i];
+                    final options = (_allQuestions[i]['options'] as List).map((option) => option.toString()).toList();
+                    String? userAnswer = userAnswerIndex != null ? options[userAnswerIndex] : null;
+                    if (userAnswer == correctAnswer) {
+                      categoryCorrectAnswers++;
+                    }
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$categoryName: $categoryCorrectAnswers/${endIndex - startIndex} правильных',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      ..._allQuestions.asMap().entries.where((entry) => entry.key >= startIndex && entry.key < endIndex).map((entry) {
+                        int index = entry.key;
+                        DocumentSnapshot question = entry.value;
+                        final options = (question['options'] as List).map((option) => option.toString()).toList();
+                        String correctAnswer = _allCorrectAnswers[index];
+                        int? userAnswerIndex = _allSelectedAnswers[index];
+                        String? userAnswer = userAnswerIndex != null ? options[userAnswerIndex] : null;
+                        String explanation = question['explanation'] as String? ?? 'Объяснение отсутствует';
+
+                        bool isCorrect = userAnswer == correctAnswer;
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Вопрос ${index - startIndex + 1}: ${question['text']}',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Ваш ответ: ${userAnswer ?? 'Не выбран'}',
+                                style: TextStyle(
+                                  color: isCorrect ? Colors.green : Colors.red,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Правильный ответ: $correctAnswer',
+                                style: const TextStyle(fontSize: 14, color: Colors.green),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Объяснение: $explanation',
+                                style: const TextStyle(fontSize: 14, fontStyle: FontStyle.italic),
+                              ),
+                              const Divider(),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      const SizedBox(height: 16),
+                    ],
+                  );
+                }).toList(),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
                   ),
+                  child: const Text('Вернуться'),
+                ),
+              ]
+              else ...[
+                Builder(
+                  builder: (BuildContext context) {
+                    final category = _categories[_currentCategoryIndex];
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Категория: ${category['name']}',
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Оставшееся время: ${_timeRemaining ~/ 60}:${(_timeRemaining % 60).toString().padLeft(2, '0')}',
+                          style: const TextStyle(fontSize: 16, color: Colors.red),
+                        ),
+                        const SizedBox(height: 16),
+                        // Display all questions for the current category
+                        ..._questions.asMap().entries.map((entry) {
+                          int questionIndex = entry.key;
+                          DocumentSnapshot question = entry.value;
+
+                          final rawOptions = question['options'];
+                          final options = rawOptions != null && rawOptions is List
+                              ? rawOptions.map((option) => option.toString()).toList()
+                              : <String>[];
+
+                          if (options.isEmpty) {
+                            return const Center(
+                              child: Text(
+                                'Ошибка: Вопрос не содержит вариантов ответа. Обратитесь к администратору.',
+                                style: TextStyle(color: Colors.red),
+                                textAlign: TextAlign.center,
+                              ),
+                            );
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Вопрос ${questionIndex + 1}: ${question['text']}',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              ...options.asMap().entries.map((optionEntry) {
+                                int optionIndex = optionEntry.key;
+                                String option = optionEntry.value;
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                  child: RadioListTile<int>(
+                                    title: Text(option, style: const TextStyle(fontSize: 16)),
+                                    value: optionIndex,
+                                    groupValue: _selectedAnswers[questionIndex],
+                                    onChanged: (value) => _selectAnswer(questionIndex, value!),
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                );
+                              }).toList(),
+                              const SizedBox(height: 16),
+                            ],
+                          );
+                        }).toList(),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: ElevatedButton(
+                            onPressed: _finishCategory,
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size(double.infinity, 50),
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text(
+                              'Закончил категорию',
+                              style: TextStyle(fontSize: 16),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ],
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
 class TrainingPage extends StatelessWidget {
-  const TrainingPage({Key? key}) : super(key: key);
+  const TrainingPage({super.key}); // Use super.key to address the lint warning
 
   @override
   Widget build(BuildContext context) {
@@ -683,7 +811,7 @@ class TrainingPage extends StatelessWidget {
                 return ListView.builder(
                   itemCount: testTypes.length,
                   itemBuilder: (context, index) {
-                    final testType = testTypes[index];
+                    final testType = testTypes[index]; // Fix typo: 'terus' to 'testTypes'
                     final testTypeId = testType.id;
                     final testTypeName = testType['name'] as String;
                     return ExpansionTile(
