@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'settings.dart';
 import 'dart:math';
+import 'package:intl/intl.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -91,6 +92,7 @@ class TestSelectionPageState extends State<TestSelectionPage> {
   void initState() {
     super.initState();
     _loadTestTypes();
+    _loadSelectedTests();
   }
 
   Future<void> _loadTestTypes() async {
@@ -111,6 +113,65 @@ class TestSelectionPageState extends State<TestSelectionPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Ошибка загрузки тестов: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadSelectedTests() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (userDoc.exists && userDoc.data() != null) {
+        Map<String, dynamic> data = userDoc.data() as Map<String, dynamic>;
+        if (data.containsKey('selected_tests')) {
+          List<dynamic> selectedTests = data['selected_tests'] as List<dynamic>;
+          if (mounted) {
+            setState(() {
+              _selectedTestTypeIds = selectedTests.map((test) => test['test_type_id'] as String).toList();
+              _selectedLanguages = {
+                for (var test in selectedTests)
+                  test['test_type_id'] as String: test['language'] as String?
+              };
+              for (var testTypeId in _selectedTestTypeIds) {
+                _loadAvailableLanguages(testTypeId);
+              }
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('TestSelectionPage: Ошибка загрузки выбранных тестов: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки выбранных тестов: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveSelectedTests() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      List<Map<String, dynamic>> selectedTests = _selectedTestTypeIds.map((testTypeId) {
+        return {
+          'test_type_id': testTypeId,
+          'language': _selectedLanguages[testTypeId],
+        };
+      }).toList();
+
+      await _firestore.collection('users').doc(user.uid).update({
+        'selected_tests': selectedTests,
+      });
+    } catch (e) {
+      debugPrint('TestSelectionPage: Ошибка сохранения выбранных тестов: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка сохранения выбранных тестов: $e')),
         );
       }
     }
@@ -160,8 +221,10 @@ class TestSelectionPageState extends State<TestSelectionPage> {
         _selectedLanguages[_selectedTestTypeId!] = null;
         _loadAvailableLanguages(_selectedTestTypeId!);
       }
-      _selectedTestTypeId = null; // Reset dropdown after adding
+      _selectedTestTypeId = null;
     });
+
+    _saveSelectedTests();
   }
 
   void _startTest(String testTypeId, String? language) {
@@ -198,7 +261,6 @@ class TestSelectionPageState extends State<TestSelectionPage> {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            // Test Type Selection Dropdown
             DropdownButtonFormField<String>(
               value: _selectedTestTypeId,
               hint: const Text('Выберите вид теста'),
@@ -229,7 +291,6 @@ class TestSelectionPageState extends State<TestSelectionPage> {
               ),
             ),
             const SizedBox(height: 8),
-            // Add Test Button
             Center(
               child: ElevatedButton(
                 onPressed: _addTestType,
@@ -245,7 +306,6 @@ class TestSelectionPageState extends State<TestSelectionPage> {
               ),
             ),
             const SizedBox(height: 16),
-            // Vertical Blocks for Selected Tests
             if (_selectedTestTypeIds.isNotEmpty) ...[
               const Text(
                 'Выбранные тесты:',
@@ -259,81 +319,98 @@ class TestSelectionPageState extends State<TestSelectionPage> {
                   final languages = _availableLanguages[testTypeId] ?? [];
                   final selectedLanguage = _selectedLanguages[testTypeId];
 
-                  return GestureDetector(
-                    onTap: () => _startTest(testTypeId, selectedLanguage),
-                    child: Card(
-                      margin: const EdgeInsets.symmetric(vertical: 8.0),
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: const BorderSide(color: Colors.grey, width: 1),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    testTypeName,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 8.0),
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: const BorderSide(color: Colors.grey, width: 1),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      testTypeName,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold),
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  if (languages.isNotEmpty)
-                                    DropdownButtonFormField<String>(
-                                      value: selectedLanguage,
-                                      hint: const Text('Выберите язык'),
-                                      items: languages.map((lang) {
-                                        return DropdownMenuItem<String>(
-                                          value: lang['code'],
-                                          child: Text(lang['name']!),
-                                        );
-                                      }).toList(),
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _selectedLanguages[testTypeId] = value;
-                                        });
-                                      },
-                                      decoration: InputDecoration(
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: const BorderSide(color: Colors.grey),
+                                    const SizedBox(height: 8),
+                                    if (languages.isNotEmpty)
+                                      DropdownButtonFormField<String>(
+                                        value: selectedLanguage,
+                                        hint: const Text('Выберите язык'),
+                                        items: languages.map((lang) {
+                                          return DropdownMenuItem<String>(
+                                            value: lang['code'],
+                                            child: Text(lang['name']!),
+                                          );
+                                        }).toList(),
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _selectedLanguages[testTypeId] = value;
+                                          });
+                                          _saveSelectedTests();
+                                        },
+                                        decoration: InputDecoration(
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: const BorderSide(color: Colors.grey),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: const BorderSide(color: Colors.grey),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: const BorderSide(color: Colors.blue, width: 2),
+                                          ),
                                         ),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: const BorderSide(color: Colors.grey),
-                                        ),
-                                        focusedBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: const BorderSide(color: Colors.blue, width: 2),
-                                        ),
+                                      )
+                                    else
+                                      const Text(
+                                        'Языки загружаются...',
+                                        style: TextStyle(color: Colors.grey),
                                       ),
-                                    )
-                                  else
-                                    const Text(
-                                      'Языки загружаются...',
-                                      style: TextStyle(color: Colors.grey),
-                                    ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 20),
-                              onPressed: () {
-                                setState(() {
-                                  _selectedTestTypeIds.remove(testTypeId);
-                                  _selectedLanguages.remove(testTypeId);
-                                  _availableLanguages.remove(testTypeId);
-                                });
-                              },
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 20),
+                                onPressed: () {
+                                  setState(() {
+                                    _selectedTestTypeIds.remove(testTypeId);
+                                    _selectedLanguages.remove(testTypeId);
+                                    _availableLanguages.remove(testTypeId);
+                                  });
+                                  _saveSelectedTests();
+                                },
+                              ),
+                            ],
+                          ),
+                          if (selectedLanguage != null) ...[
+                            const SizedBox(height: 8),
+                            ElevatedButton(
+                              onPressed: () => _startTest(testTypeId, selectedLanguage),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text('Начать тест'),
                             ),
                           ],
-                        ),
+                        ],
                       ),
                     ),
                   );
@@ -552,7 +629,7 @@ class TestPageState extends State<TestPage> {
     });
   }
 
-  void _finishCategory() {
+  Future<void> _finishCategory() async {
     if (_selectedAnswers.contains(null)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -564,7 +641,7 @@ class TestPageState extends State<TestPage> {
 
     DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
     String categoryName = categoryDoc['name'] as String;
-    double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble();
+    double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble(); // Used to calculate categoryPoints
 
     _categoryNames.add(categoryName);
     _pointsPerQuestionByCategory.add(pointsPerQuestion);
@@ -589,13 +666,15 @@ class TestPageState extends State<TestPage> {
     double categoryPoints = categoryCorrectAnswers * pointsPerQuestion;
     _totalPoints += categoryPoints;
 
-    _saveCategoryResult();
+    if (_questions.isNotEmpty) {
+      await _saveCategoryResult();
+    }
 
     if (_currentCategoryIndex + 1 < _categories.length) {
       setState(() {
         _currentCategoryIndex++;
       });
-      _loadQuestionsForCurrentCategory();
+      await _loadQuestionsForCurrentCategory();
     } else {
       _finishEntireTest();
     }
@@ -1034,13 +1113,145 @@ class ContestsPage extends StatelessWidget {
   }
 }
 
-class HistoryPage extends StatelessWidget {
+class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
 
   @override
+  HistoryPageState createState() => HistoryPageState();
+}
+
+class HistoryPageState extends State<HistoryPage> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  List<Map<String, String>> _testTypes = [];
+  String? _selectedTestType;
+  List<Map<String, String>> _categories = [];
+  String _sortBy = 'date_desc';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTestTypes();
+    _loadSelectedTestType();
+  }
+
+  Future<void> _loadTestTypes() async {
+    try {
+      QuerySnapshot testTypesSnapshot = await _firestore.collection('test_types').get();
+      if (mounted) {
+        setState(() {
+          _testTypes = testTypesSnapshot.docs.map((doc) {
+            return {
+              'id': doc.id,
+              'name': doc['name'] as String,
+            };
+          }).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('HistoryPage: Ошибка загрузки видов тестов: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки видов тестов: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadCategories(String? testType) async {
+    try {
+      List<Map<String, String>> categories = [];
+      if (testType == null) {
+        for (var testTypeMap in _testTypes) {
+          final testTypeId = testTypeMap['id']!;
+          final testTypeName = testTypeMap['name']!;
+          QuerySnapshot categoriesSnapshot = await _firestore
+              .collection('test_types')
+              .doc(testTypeId)
+              .collection('categories')
+              .get();
+          categories.addAll(categoriesSnapshot.docs.map((doc) => {
+                'test_type': testTypeName,
+                'category': doc['name'] as String,
+              }));
+        }
+      } else {
+        final testTypeId = _testTypes.firstWhere((t) => t['name'] == testType)['id']!;
+        final testTypeName = testType;
+        QuerySnapshot categoriesSnapshot = await _firestore
+            .collection('test_types')
+            .doc(testTypeId)
+            .collection('categories')
+            .get();
+        categories = categoriesSnapshot.docs.map((doc) => {
+              'test_type': testTypeName,
+              'category': doc['name'] as String,
+            }).toList();
+      }
+      if (mounted) {
+        setState(() {
+          _categories = categories;
+        });
+      }
+    } catch (e) {
+      debugPrint('HistoryPage: Ошибка загрузки категорий: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки категорий: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadSelectedTestType() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (userDoc.exists && userDoc.data() != null) {
+        Map<String, dynamic> data = userDoc.data() as Map<String, dynamic>;
+        if (data.containsKey('history_filter')) {
+          String? selectedTestType = data['history_filter'] as String?;
+          if (mounted) {
+            setState(() {
+              _selectedTestType = selectedTestType;
+            });
+            await _loadCategories(selectedTestType);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('HistoryPage: Ошибка загрузки фильтра истории: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки фильтра истории: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveSelectedTestType() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      await _firestore.collection('users').doc(user.uid).update({
+        'history_filter': _selectedTestType,
+      });
+    } catch (e) {
+      debugPrint('HistoryPage: Ошибка сохранения фильтра истории: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка сохранения фильтра истории: $e')),
+        );
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final firestore = FirebaseFirestore.instance;
+    final user = _auth.currentUser;
 
     if (user == null) {
       return const Center(child: Text('Пользователь не авторизован'));
@@ -1051,14 +1262,151 @@ class HistoryPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'История тестов',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'История тестов',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              TextButton(
+                onPressed: () async {
+                  bool? confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Очистить историю?'),
+                      content: const Text('Вы уверены, что хотите удалить всю историю тестов? Это действие нельзя отменить.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Отмена'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Очистить', style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirm == true) {
+                    QuerySnapshot historySnapshot = await _firestore
+                        .collection('users')
+                        .doc(user.uid)
+                        .collection('test_history')
+                        .get();
+                    for (var doc in historySnapshot.docs) {
+                      await doc.reference.delete();
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('История очищена')),
+                    );
+                  }
+                },
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Очистить историю'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _selectedTestType,
+                  hint: const Text('Выберите вид теста'),
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('Все тесты'),
+                    ),
+                    ..._testTypes.map((testType) {
+                      return DropdownMenuItem<String>(
+                        value: testType['name'],
+                        child: Text(testType['name']!),
+                      );
+                    }).toList(),
+                  ],
+                  onChanged: (value) async {
+                    setState(() {
+                      _selectedTestType = value;
+                    });
+                    await _loadCategories(value);
+                    await _saveSelectedTestType();
+                  },
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.blue),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.blue),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.blue, width: 2),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _sortBy,
+                  items: const [
+                    DropdownMenuItem<String>(
+                      value: 'date_desc',
+                      child: Text('Дата (убыв.)'),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'date_asc',
+                      child: Text('Дата (возр.)'),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'points_desc',
+                      child: Text('Баллы (убыв.)'),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'points_asc',
+                      child: Text('Баллы (возр.)'),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'percent_desc',
+                      child: Text('Процент (убыв.)'),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'percent_asc',
+                      child: Text('Процент (возр.)'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _sortBy = value!;
+                    });
+                  },
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.grey),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.grey),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.blue, width: 2),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: firestore
+              stream: _firestore
                   .collection('users')
                   .doc(user.uid)
                   .collection('test_history')
@@ -1072,56 +1420,269 @@ class HistoryPage extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final history = snapshot.data!.docs;
-                if (history.isEmpty) {
-                  return const Center(child: Text('История пуста'));
+
+                final filteredHistory = _selectedTestType == null
+                    ? history
+                    : history.where((doc) => doc['test_type'] == _selectedTestType).toList();
+
+                if (filteredHistory.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'История пуста',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Пройдите тест, чтобы увидеть результаты здесь.',
+                          style: TextStyle(fontSize: 14, color: Colors.grey),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  );
                 }
 
                 int totalTimeSpent = 0;
                 int totalTime = 0;
                 double totalPoints = 0;
 
-                for (var record in history) {
+                for (var record in filteredHistory) {
                   totalTimeSpent += record['time_spent'] as int;
                   totalTime += record['total_time'] as int;
                   totalPoints += (record['points'] as num).toDouble();
                 }
 
-                return Column(
-                  children: [
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: history.length,
-                        itemBuilder: (context, index) {
-                          final record = history[index];
-                          final date = DateTime.parse(record['date']);
-                          final testType = record['test_type'] as String;
-                          final category = record['category'] as String;
-                          final correctAnswers = record['correct_answers'] as int;
-                          final totalQuestions = record['total_questions'] as int;
-                          final points = (record['points'] as num).toDouble();
-                          final timeSpent = record['time_spent'] as int;
-                          final totalTimeRecord = record['total_time'] as int;
+                final Map<String, List<Map<String, dynamic>>> groupedHistory = {};
+                for (var record in filteredHistory) {
+                  final date = DateTime.parse(record['date']).toString().split(' ')[0];
+                  if (!groupedHistory.containsKey(date)) {
+                    groupedHistory[date] = [];
+                  }
+                  groupedHistory[date]!.add({
+                    'record': record,
+                    'test_type': record['test_type'] as String,
+                    'category': record['category'] as String,
+                    'points': (record['points'] as num).toDouble(),
+                    'correct_answers': record['correct_answers'] as int,
+                    'total_questions': record['total_questions'] as int,
+                    'time_spent': record['time_spent'] as int,
+                    'total_time': record['total_time'] as int,
+                  });
+                }
 
-                          return ListTile(
-                            title: Text('$testType - $category'),
-                            subtitle: Text(
-                              '${date.toIso8601String()}\n'
-                              '$correctAnswers/$totalQuestions ответов, $points баллов, '
-                              '${timeSpent ~/ 60} мин/${totalTimeRecord ~/ 60} мин',
+                List<Map<String, dynamic>> historyEntries = groupedHistory.entries.map((entry) {
+                  final date = entry.key;
+                  final records = entry.value;
+
+                  final totalPointsForDate = records.fold<double>(
+                    0.0,
+                    (sum, r) => sum + (r['points'] as double),
+                  );
+
+                  final totalCorrectAnswers = records.fold<int>(
+                    0,
+                    (sum, r) => sum + (r['correct_answers'] as int),
+                  );
+                  final totalQuestions = records.fold<int>(
+                    0,
+                    (sum, r) => sum + (r['total_questions'] as int),
+                  );
+                  final percentage = totalQuestions > 0 ? (totalCorrectAnswers / totalQuestions * 100) : 0.0;
+
+                  final totalTimeSpentForDate = records.fold<int>(
+                    0,
+                    (sum, r) => sum + (r['time_spent'] as int),
+                  );
+
+                  final Map<String, double> categoryPoints = {};
+                  for (var record in records) {
+                    final testType = record['test_type'] as String;
+                    final category = record['category'] as String;
+                    final key = '$testType:$category';
+                    final points = record['points'] as double;
+                    categoryPoints[key] = points;
+                  }
+
+                  return {
+                    'date': DateTime.parse(date),
+                    'records': records,
+                    'total_points': totalPointsForDate,
+                    'percentage': percentage,
+                    'time_spent': totalTimeSpentForDate,
+                    'category_points': categoryPoints,
+                  };
+                }).toList();
+
+                if (_sortBy == 'date_asc') {
+                  historyEntries.sort((a, b) => a['date'].compareTo(b['date']));
+                } else if (_sortBy == 'date_desc') {
+                  historyEntries.sort((a, b) => b['date'].compareTo(a['date']));
+                } else if (_sortBy == 'points_asc') {
+                  historyEntries.sort((a, b) => a['total_points'].compareTo(b['total_points']));
+                } else if (_sortBy == 'points_desc') {
+                  historyEntries.sort((a, b) => b['total_points'].compareTo(a['total_points']));
+                } else if (_sortBy == 'percent_asc') {
+                  historyEntries.sort((a, b) => a['percentage'].compareTo(b['percentage']));
+                } else if (_sortBy == 'percent_desc') {
+                  historyEntries.sort((a, b) => b['percentage'].compareTo(a['percentage']));
+                }
+
+                List<DataColumn> columns = [
+                  const DataColumn(
+                    label: Text(
+                      'Дата',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  ..._categories.map((categoryMap) => DataColumn(
+                        label: SizedBox(
+                          width: 100,
+                          child: Text(
+                            '${categoryMap['test_type']}: ${categoryMap['category']}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )),
+                  const DataColumn(
+                    label: Text(
+                      'Процент правильных',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const DataColumn(
+                    label: Text(
+                      'Время',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const DataColumn(
+                    label: Text(
+                      'Общий балл',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ];
+
+                List<DataRow> rows = historyEntries.map((entry) {
+                  final date = entry['date'] as DateTime;
+                  final records = entry['records'] as List<Map<String, dynamic>>;
+                  final totalPointsForDate = entry['total_points'] as double;
+                  final percentage = entry['percentage'] as double;
+                  final timeSpent = entry['time_spent'] as int;
+                  final categoryPoints = entry['category_points'] as Map<String, double>;
+
+                  final formattedDate = DateFormat('d MMMM yyyy', 'ru').format(date);
+
+                  List<DataCell> cells = [
+                    DataCell(Text(formattedDate)),
+                    ..._categories.map((categoryMap) {
+                      final key = '${categoryMap['test_type']}:${categoryMap['category']}';
+                      return DataCell(
+                        Text(
+                          categoryPoints.containsKey(key)
+                              ? categoryPoints[key]!.toStringAsFixed(1)
+                              : 'N/A',
+                          style: TextStyle(
+                            color: categoryPoints.containsKey(key)
+                                ? (categoryPoints[key]! >= 80
+                                    ? Colors.green
+                                    : categoryPoints[key]! < 50
+                                        ? Colors.red
+                                        : Colors.orange)
+                                : Colors.grey,
+                          ),
+                        ),
+                      );
+                    }),
+                    DataCell(Text('${percentage.toStringAsFixed(1)}%')),
+                    DataCell(Text('${timeSpent ~/ 60} мин')),
+                    DataCell(Text(totalPointsForDate.toStringAsFixed(1))),
+                  ];
+
+                  return DataRow(
+                    cells: cells,
+                    onSelectChanged: (selected) {
+                      if (selected == true) {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: Text('Результаты за $formattedDate'),
+                            content: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: records.map((r) {
+                                  final record = r['record'] as QueryDocumentSnapshot;
+                                  final testType = record['test_type'] as String;
+                                  final category = record['category'] as String;
+                                  final correctAnswers = record['correct_answers'] as int;
+                                  final totalQuestions = record['total_questions'] as int;
+                                  final points = (record['points'] as num).toDouble();
+                                  final timeSpentRecord = record['time_spent'] as int;
+                                  final totalTime = record['total_time'] as int;
+                                  final percentageRecord = totalQuestions > 0
+                                      ? (correctAnswers / totalQuestions * 100).toStringAsFixed(1)
+                                      : '0.0';
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 16.0),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '$testType: $category',
+                                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text('Правильных ответов: $correctAnswers/$totalQuestions ($percentageRecord%)'),
+                                        const SizedBox(height: 4),
+                                        Text('Баллы: $points'),
+                                        const SizedBox(height: 4),
+                                        Text('Время: ${timeSpentRecord ~/ 60} мин из ${totalTime ~/ 60} мин'),
+                                        const Divider(),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
                             ),
-                          );
-                        },
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Закрыть'),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                    },
+                  );
+                }).toList();
+
+                return SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          columns: columns,
+                          rows: rows,
+                        ),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Text(
-                        'Общий итог: ${totalTimeSpent ~/ 60} мин/${totalTime ~/ 60} мин, '
-                        'общий балл: $totalPoints',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Text(
+                          'Общий итог: ${totalTimeSpent ~/ 60} мин/${totalTime ~/ 60} мин, общий балл: $totalPoints',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               },
             ),
