@@ -1,14 +1,15 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'settings.dart';
-import 'contests.dart'; // Импорт нового файла contests.dart
+import 'contests.dart';
 import 'dart:math';
 import 'package:intl/intl.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final Function(String) onThemeChanged;
+
+  const HomePage({super.key, required this.onThemeChanged});
 
   @override
   HomePageState createState() => HomePageState();
@@ -17,14 +18,20 @@ class HomePage extends StatefulWidget {
 class HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = [
-    const TestSelectionPage(),
-    const TrainingPage(),
-    const ContestsPage(), // Используем ContestsPage из contests.dart
-    const HistoryPage(),
-    const SettingsPage(),
-    const MyResultsPage(),
-  ];
+  late final List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      const TestSelectionPage(),
+      const TrainingPage(),
+      const ContestsPage(),
+      const HistoryPage(),
+      SettingsPage(onThemeChanged: widget.onThemeChanged),
+      const MyResultsPage(),
+    ];
+  }
 
   void _onItemTapped(int index) {
     setState(() {
@@ -342,8 +349,7 @@ class TestSelectionPageState extends State<TestSelectionPage> {
                                     Text(
                                       testTypeName,
                                       style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold),
+                                          fontSize: 16, fontWeight: FontWeight.bold),
                                     ),
                                     const SizedBox(height: 8),
                                     if (languages.isNotEmpty)
@@ -456,12 +462,12 @@ class TestPageState extends State<TestPage> {
   bool _isLoading = true;
   bool _entireTestFinished = false;
 
-  List<DocumentSnapshot> _allQuestions = [];
-  List<int?> _allSelectedAnswers = [];
-  List<String> _allCorrectAnswers = [];
-  List<String> _categoryNames = [];
-  List<int> _questionsPerCategory = [];
-  List<double> _pointsPerQuestionByCategory = [];
+  final List<DocumentSnapshot> _allQuestions = [];
+  final List<int?> _allSelectedAnswers = [];
+  final List<String> _allCorrectAnswers = [];
+  final List<String> _categoryNames = [];
+  final List<int> _questionsPerCategory = [];
+  final List<double> _pointsPerQuestionByCategory = [];
   double _totalPoints = 0;
 
   @override
@@ -690,7 +696,6 @@ class TestPageState extends State<TestPage> {
     if (user == null) return;
 
     DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
-    double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble();
     int categoryCorrectAnswers = 0;
 
     for (int i = 0; i < _questions.length; i++) {
@@ -703,7 +708,7 @@ class TestPageState extends State<TestPage> {
       }
     }
 
-    double categoryPoints = categoryCorrectAnswers * pointsPerQuestion;
+    double categoryPoints = categoryCorrectAnswers * (categoryDoc['points_per_question'] as num).toDouble();
 
     DocumentSnapshot testTypeDoc = await _firestore.collection('test_types').doc(widget.testTypeId).get();
     String testTypeName = testTypeDoc['name'] as String;

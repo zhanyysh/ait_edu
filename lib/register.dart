@@ -53,14 +53,11 @@ class _RegisterPageState extends State<RegisterPage> {
             'role': 'user',
             'created_at': DateTime.now().toIso8601String(),
             'preferred_tests': [],
-            'theme': 'light',
-            'avatar_url': null,
           });
           debugPrint('RegisterPage: Данные пользователя успешно сохранены в Firestore для UID: ${user.uid}');
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Регистрация успешна')),
           );
-          // Перенаправление на страницу логина после успешной регистрации
           Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
         } catch (firestoreError) {
           debugPrint('RegisterPage: Ошибка при сохранении данных в Firestore: $firestoreError');
