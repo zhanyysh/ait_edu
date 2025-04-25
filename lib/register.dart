@@ -38,7 +38,6 @@ class _RegisterPageState extends State<RegisterPage> {
     });
 
     try {
-      // Создаём пользователя в Firebase Authentication
       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
@@ -46,7 +45,6 @@ class _RegisterPageState extends State<RegisterPage> {
       User? user = userCredential.user;
 
       if (user != null) {
-        // Сохраняем данные пользователя в Firestore
         try {
           await _firestore.collection('users').doc(user.uid).set({
             'email': _emailController.text.trim(),
@@ -56,17 +54,19 @@ class _RegisterPageState extends State<RegisterPage> {
             'created_at': DateTime.now().toIso8601String(),
             'preferred_tests': [],
             'theme': 'light',
+            'avatar_url': null,
           });
           debugPrint('RegisterPage: Данные пользователя успешно сохранены в Firestore для UID: ${user.uid}');
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Регистрация успешна')),
           );
+          // Перенаправление на страницу логина после успешной регистрации
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
         } catch (firestoreError) {
           debugPrint('RegisterPage: Ошибка при сохранении данных в Firestore: $firestoreError');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Ошибка сохранения данных: $firestoreError')),
           );
-          // Удаляем пользователя из Authentication, если Firestore не сработал
           await user.delete();
           return;
         }
