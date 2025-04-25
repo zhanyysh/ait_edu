@@ -1,13 +1,13 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  final Function(String) onThemeChanged;
+
+  const SettingsPage({super.key, required this.onThemeChanged});
 
   @override
   _SettingsPageState createState() => _SettingsPageState();
@@ -16,19 +16,16 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
-  String? _selectedTheme = 'light';
+  String _currentTheme = 'light';
   bool _isLoading = true;
   bool _isEditing = false;
   String? _errorMessage;
   String? _email;
   String? _firstName;
   String? _lastName;
-  String? _avatarUrl;
-  File? _selectedImage; // Для временного хранения выбранного изображения
   bool _isEmailVerified = false;
   bool _verificationEmailSent = false;
   Timer? _verificationTimer;
@@ -37,6 +34,7 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _loadUserData();
+    _loadTheme();
     _startVerificationCheck();
   }
 
@@ -53,8 +51,6 @@ class _SettingsPageState extends State<SettingsPage> {
             _email = userDoc['email'] as String? ?? 'Не указано';
             _firstName = userDoc['first_name'] as String? ?? 'Не указано';
             _lastName = userDoc['last_name'] as String? ?? 'Не указано';
-            _avatarUrl = userDoc['avatar_url'] as String?;
-            _selectedTheme = userDoc['theme'] as String? ?? 'light';
             _emailController.text = _email!;
             _firstNameController.text = _firstName!;
             _lastNameController.text = _lastName!;
@@ -78,6 +74,21 @@ class _SettingsPageState extends State<SettingsPage> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentTheme = prefs.getString('theme') ?? 'light';
+    });
+  }
+
+  void _toggleTheme() {
+    String newTheme = _currentTheme == 'light' ? 'dark' : 'light';
+    setState(() {
+      _currentTheme = newTheme;
+    });
+    widget.onThemeChanged(newTheme);
   }
 
   void _startVerificationCheck() {
@@ -128,36 +139,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
-    if (pickedFile != null) {
-      setState(() {
-        _selectedImage = File(pickedFile.path);
-      });
-    }
-  }
-
-  Future<String?> _uploadImage(File image) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return null;
-
-      // Создаём путь для хранения изображения в Firebase Storage
-      final storageRef = _storage.ref().child('avatars/${user.uid}.jpg');
-      final uploadTask = storageRef.putFile(image);
-      await uploadTask;
-      final downloadUrl = await storageRef.getDownloadURL();
-      return downloadUrl;
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка загрузки изображения: $e')),
-      );
-      return null;
-    }
-  }
-
   Future<void> _updateUserData() async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -196,7 +177,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     try {
-      // Обновляем email в Firebase Auth, если он изменился
       if (_emailController.text.trim() != user.email) {
         try {
           await user.updateEmail(_emailController.text.trim());
@@ -221,27 +201,16 @@ class _SettingsPageState extends State<SettingsPage> {
         }
       }
 
-      // Загружаем новое изображение в Firebase Storage, если оно выбрано
-      String? newAvatarUrl = _avatarUrl;
-      if (_selectedImage != null) {
-        newAvatarUrl = await _uploadImage(_selectedImage!);
-      }
-
-      // Обновляем данные в Firestore
       await _firestore.collection('users').doc(user.uid).update({
         'email': _emailController.text.trim(),
         'first_name': _firstNameController.text.trim(),
-        'last_name': _lastNameController.text.trim(),
-        'avatar_url': newAvatarUrl,
-        'theme': _selectedTheme ?? 'light',
+        'last_name': _firstNameController.text.trim(),
       });
 
       setState(() {
         _email = _emailController.text.trim();
         _firstName = _firstNameController.text.trim();
         _lastName = _lastNameController.text.trim();
-        _avatarUrl = newAvatarUrl;
-        _selectedImage = null; // Сбрасываем выбранное изображение
         _isEditing = false;
       });
 
@@ -280,9 +249,28 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Настройки',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Настройки',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                ElevatedButton(
+                  onPressed: _toggleTheme,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  child: Text(
+                    _currentTheme == 'light' ? 'Светлая' : 'Тёмная',
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             if (!_isEditing) ...[
@@ -295,25 +283,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      CircleAvatar(
-                        radius: 40,
-                        backgroundImage: _avatarUrl != null && _avatarUrl!.isNotEmpty
-                            ? NetworkImage(_avatarUrl!)
-                            : null,
-                        child: _avatarUrl == null || _avatarUrl!.isEmpty
-                            ? const Icon(Icons.person, size: 40)
-                            : null,
-                      ),
-                      const SizedBox(height: 16),
                       const Text(
                         'Email',
                         style: TextStyle(fontSize: 14, color: Colors.grey),
                       ),
                       const SizedBox(height: 4),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             _email!,
@@ -347,16 +324,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       const SizedBox(height: 4),
                       Text(
                         _lastName!,
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Тема',
-                        style: TextStyle(fontSize: 14, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _selectedTheme == 'light' ? 'Светлая' : 'Тёмная',
                         style: const TextStyle(fontSize: 16),
                       ),
                     ],
@@ -412,43 +379,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
-                      GestureDetector(
-                        onTap: _pickImage,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            CircleAvatar(
-                              radius: 40,
-                              backgroundImage: _selectedImage != null
-                                  ? FileImage(_selectedImage!)
-                                  : (_avatarUrl != null && _avatarUrl!.isNotEmpty
-                                      ? NetworkImage(_avatarUrl!)
-                                      : null),
-                              child: _selectedImage == null &&
-                                      (_avatarUrl == null || _avatarUrl!.isEmpty)
-                                  ? const Icon(Icons.person, size: 40)
-                                  : null,
-                            ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.blue,
-                                ),
-                                child: const Icon(
-                                  Icons.edit,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
                       TextField(
                         controller: _emailController,
                         decoration: const InputDecoration(
@@ -469,25 +399,6 @@ class _SettingsPageState extends State<SettingsPage> {
                         controller: _lastNameController,
                         decoration: const InputDecoration(
                           labelText: 'Фамилия',
-                          border: UnderlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: _selectedTheme,
-                        hint: const Text('Выберите тему'),
-                        items: ['light', 'dark'].map((theme) {
-                          return DropdownMenuItem<String>(
-                            value: theme,
-                            child: Text(theme == 'light' ? 'Светлая' : 'Тёмная'),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedTheme = value;
-                          });
-                        },
-                        decoration: const InputDecoration(
                           border: UnderlineInputBorder(),
                         ),
                       ),
@@ -519,7 +430,6 @@ class _SettingsPageState extends State<SettingsPage> {
                         _emailController.text = _email!;
                         _firstNameController.text = _firstName!;
                         _lastNameController.text = _lastName!;
-                        _selectedImage = null; // Сбрасываем выбранное изображение
                       });
                     },
                     style: ElevatedButton.styleFrom(
