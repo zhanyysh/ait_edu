@@ -11,7 +11,7 @@ plugins {
 android {
     namespace = "com.example.flutter_application_1"
     ndkVersion = "27.0.12077973"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.flutter_application_1"
