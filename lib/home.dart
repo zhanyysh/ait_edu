@@ -1,7 +1,9 @@
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'settings.dart';
+import 'contests.dart'; // Импорт нового файла contests.dart
 import 'dart:math';
 import 'package:intl/intl.dart';
 
@@ -18,7 +20,7 @@ class HomePageState extends State<HomePage> {
   final List<Widget> _pages = [
     const TestSelectionPage(),
     const TrainingPage(),
-    const ContestsPage(),
+    const ContestsPage(), // Используем ContestsPage из contests.dart
     const HistoryPage(),
     const SettingsPage(),
     const MyResultsPage(),
@@ -227,7 +229,7 @@ class TestSelectionPageState extends State<TestSelectionPage> {
     _saveSelectedTests();
   }
 
-  void _startTest(String testTypeId, String? language) {
+  void _startTest(String testTypeId, String? language, {String? contestId}) {
     if (language == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -243,6 +245,7 @@ class TestSelectionPageState extends State<TestSelectionPage> {
         builder: (context) => TestPage(
           testTypeId: testTypeId,
           language: language,
+          contestId: contestId,
         ),
       ),
     );
@@ -427,11 +430,13 @@ class TestSelectionPageState extends State<TestSelectionPage> {
 class TestPage extends StatefulWidget {
   final String testTypeId;
   final String language;
+  final String? contestId;
 
   const TestPage({
     super.key,
     required this.testTypeId,
     required this.language,
+    this.contestId,
   });
 
   @override
@@ -641,7 +646,7 @@ class TestPageState extends State<TestPage> {
 
     DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
     String categoryName = categoryDoc['name'] as String;
-    double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble(); // Used to calculate categoryPoints
+    double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble();
 
     _categoryNames.add(categoryName);
     _pointsPerQuestionByCategory.add(pointsPerQuestion);
@@ -704,6 +709,7 @@ class TestPageState extends State<TestPage> {
     String testTypeName = testTypeDoc['name'] as String;
     String categoryName = categoryDoc['name'] as String;
 
+    // Сохранение в историю пользователя
     await _firestore.collection('users').doc(user.uid).collection('test_history').add({
       'date': DateTime.now().toIso8601String(),
       'test_type': testTypeName,
@@ -714,6 +720,22 @@ class TestPageState extends State<TestPage> {
       'time_spent': (_duration * 60 - _timeRemaining).toInt(),
       'total_time': (_duration * 60).toInt(),
     });
+
+    // Сохранение в результаты контеста, если это контест
+    if (widget.contestId != null) {
+      await _firestore
+          .collection('contest_results')
+          .doc(widget.contestId)
+          .collection('results')
+          .doc(user.uid)
+          .set({
+        'correct_answers': categoryCorrectAnswers,
+        'total_questions': _questions.length,
+        'points': categoryPoints,
+        'time_spent': (_duration * 60 - _timeRemaining).toInt(),
+        'completed_at': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+    }
   }
 
   void _finishEntireTest() {
@@ -1020,87 +1042,6 @@ class TrainingPage extends StatelessWidget {
                           },
                         ),
                       ],
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class ContestsPage extends StatelessWidget {
-  const ContestsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final firestore = FirebaseFirestore.instance;
-
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Контесты',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: firestore.collection('contests').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Text('Ошибка: ${snapshot.error}');
-                }
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final contests = snapshot.data!.docs;
-                if (contests.isEmpty) {
-                  return const Center(child: Text('Нет доступных контестов'));
-                }
-                return ListView.builder(
-                  itemCount: contests.length,
-                  itemBuilder: (context, index) {
-                    final contest = contests[index];
-                    final contestId = contest.id;
-                    final testTypeId = contest['test_type_id'] as String;
-                    final date = DateTime.parse(contest['date']);
-                    final participants = List<String>.from(contest['participants']);
-                    final isParticipant = user != null && participants.contains(user.uid);
-
-                    return FutureBuilder<DocumentSnapshot>(
-                      future: firestore.collection('test_types').doc(testTypeId).get(),
-                      builder: (context, testTypeSnapshot) {
-                        if (testTypeSnapshot.connectionState == ConnectionState.waiting) {
-                          return const ListTile(title: Text('Загрузка...'));
-                        }
-                        final testTypeName = testTypeSnapshot.data?['name'] ?? 'Неизвестный тест';
-                        return ListTile(
-                          title: Text('Контест: $testTypeName'),
-                          subtitle: Text('Дата: ${date.toIso8601String()}'),
-                          trailing: isParticipant
-                              ? const Text('Вы участвуете')
-                              : ElevatedButton(
-                                  onPressed: () async {
-                                    if (user != null) {
-                                      await firestore.collection('contests').doc(contestId).update({
-                                        'participants': FieldValue.arrayUnion([user.uid]),
-                                      });
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Вы записались на контест')),
-                                      );
-                                    }
-                                  },
-                                  child: const Text('Записаться'),
-                                ),
-                        );
-                      },
                     );
                   },
                 );

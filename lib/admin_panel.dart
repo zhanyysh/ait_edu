@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 class AdminPanelPage extends StatefulWidget {
   const AdminPanelPage({Key? key}) : super(key: key);
@@ -75,7 +76,7 @@ class TestTypesTab extends StatefulWidget {
 
 class _TestTypesTabState extends State<TestTypesTab> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance; // Renamed to _auth
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final TextEditingController _testTypeNameController = TextEditingController();
   String? _editingTestTypeId;
 
@@ -88,7 +89,7 @@ class _TestTypesTabState extends State<TestTypesTab> {
       return;
     }
 
-    final user = _auth.currentUser; // Use _auth instead of _firestore
+    final user = _auth.currentUser;
     if (user == null) {
       debugPrint('TestTypesTab: Ошибка: Пользователь не авторизован');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1009,7 +1010,6 @@ class _QuestionsTabState extends State<QuestionsTab> {
                     ),
                     onChanged: (value) {
                       setState(() {
-                        // Reset correct answer if options change
                         _correctAnswer = null;
                       });
                     },
@@ -1134,28 +1134,97 @@ class ContestsTab extends StatefulWidget {
 class _ContestsTabState extends State<ContestsTab> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String? _selectedTestTypeId;
+  String? _selectedLanguage;
   DateTime _selectedDate = DateTime.now();
+  TimeOfDay _selectedTime = TimeOfDay.now();
+  bool _isRestricted = false;
+  final TextEditingController _passwordController = TextEditingController();
+  List<Map<String, String>> _availableLanguages = [];
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadLanguages(String testTypeId) async {
+    try {
+      QuerySnapshot languagesSnapshot = await _firestore
+          .collection('test_types')
+          .doc(testTypeId)
+          .collection('languages')
+          .get();
+      setState(() {
+        _availableLanguages = languagesSnapshot.docs.map((doc) {
+          return {
+            'name': doc['name'] as String,
+            'code': doc['code'] as String,
+          };
+        }).toList();
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка загрузки языков: $e')),
+      );
+    }
+  }
 
   Future<void> _addContest() async {
-    if (_selectedTestTypeId == null) {
+    if (_selectedTestTypeId == null || _selectedLanguage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Выберите вид теста')),
+        const SnackBar(content: Text('Выберите вид теста и язык')),
+      );
+      return;
+    }
+
+    if (_isRestricted && _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Укажите пароль для ограниченного контеста')),
       );
       return;
     }
 
     try {
+      final contestDateTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedTime.hour,
+        _selectedTime.minute,
+      );
+
       await _firestore.collection('contests').add({
         'test_type_id': _selectedTestTypeId,
-        'date': _selectedDate.toIso8601String(),
+        'language': _selectedLanguage,
+        'date': contestDateTime.toIso8601String(),
+        'is_restricted': _isRestricted,
+        'password': _isRestricted ? _passwordController.text : null,
         'participants': [],
+        'created_at': DateTime.now().toIso8601String(),
+        'created_by': FirebaseAuth.instance.currentUser?.uid,
       });
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Контест добавлен')),
       );
+
+      setState(() {
+        _selectedTestTypeId = null;
+        _selectedLanguage = null;
+        _selectedDate = DateTime.now();
+        _selectedTime = TimeOfDay.now();
+        _isRestricted = false;
+        _passwordController.clear();
+        _availableLanguages = [];
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e')),
+        SnackBar(content: Text('Ошибка при добавлении контеста: $e')),
       );
     }
   }
@@ -1168,7 +1237,7 @@ class _ContestsTabState extends State<ContestsTab> {
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка при удалении: $e')),
+        SnackBar(content: Text('Ошибка при удалении контеста: $e')),
       );
     }
   }
@@ -1177,46 +1246,71 @@ class _ContestsTabState extends State<ContestsTab> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Управление контестами',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          StreamBuilder<QuerySnapshot>(
-            stream: _firestore.collection('test_types').snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Text('Ошибка: ${snapshot.error}');
-              }
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const CircularProgressIndicator();
-              }
-              final testTypes = snapshot.data!.docs;
-              return DropdownButtonFormField<String>(
-                value: _selectedTestTypeId,
-                hint: const Text('Выберите вид теста'),
-                items: testTypes.map((testType) {
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Управление контестами',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            StreamBuilder<QuerySnapshot>(
+              stream: _firestore.collection('test_types').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Text('Ошибка: ${snapshot.error}');
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const CircularProgressIndicator();
+                }
+                final testTypes = snapshot.data!.docs;
+                return DropdownButtonFormField<String>(
+                  value: _selectedTestTypeId,
+                  hint: const Text('Выберите вид теста'),
+                  items: testTypes.map((testType) {
+                    return DropdownMenuItem<String>(
+                      value: testType.id,
+                      child: Text(testType['name']),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedTestTypeId = value;
+                      _selectedLanguage = null;
+                      _availableLanguages = [];
+                      if (value != null) {
+                        _loadLanguages(value);
+                      }
+                    });
+                  },
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            if (_selectedTestTypeId != null && _availableLanguages.isNotEmpty)
+              DropdownButtonFormField<String>(
+                value: _selectedLanguage,
+                hint: const Text('Выберите язык'),
+                items: _availableLanguages.map((lang) {
                   return DropdownMenuItem<String>(
-                    value: testType.id,
-                    child: Text(testType['name']),
+                    value: lang['code'],
+                    child: Text(lang['name']!),
                   );
                 }).toList(),
                 onChanged: (value) {
                   setState(() {
-                    _selectedTestTypeId = value;
+                    _selectedLanguage = value;
                   });
                 },
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                 ),
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          if (_selectedTestTypeId != null) ...[
+              ),
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
@@ -1244,47 +1338,119 @@ class _ContestsTabState extends State<ContestsTab> {
               ],
             ),
             const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Время: ${_selectedTime.format(context)}',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final pickedTime = await showTimePicker(
+                      context: context,
+                      initialTime: _selectedTime,
+                    );
+                    if (pickedTime != null) {
+                      setState(() {
+                        _selectedTime = pickedTime;
+                      });
+                    }
+                  },
+                  child: const Text('Выбрать время'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text('Ограниченный контест:'),
+                Checkbox(
+                  value: _isRestricted,
+                  onChanged: (value) {
+                    setState(() {
+                      _isRestricted = value ?? false;
+                      if (!_isRestricted) {
+                        _passwordController.clear();
+                      }
+                    });
+                  },
+                ),
+              ],
+            ),
+            if (_isRestricted) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _passwordController,
+                decoration: const InputDecoration(
+                  labelText: 'Пароль для контеста',
+                  border: OutlineInputBorder(),
+                ),
+                obscureText: true,
+              ),
+            ],
+            const SizedBox(height: 16),
             ElevatedButton(
               onPressed: _addContest,
               child: const Text('Добавить контест'),
             ),
             const SizedBox(height: 16),
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _firestore
-                    .collection('contests')
-                    .where('test_type_id', isEqualTo: _selectedTestTypeId)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Text('Ошибка: ${snapshot.error}');
-                  }
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final contests = snapshot.data!.docs;
-                  return ListView.builder(
-                    itemCount: contests.length,
-                    itemBuilder: (context, index) {
-                      final contest = contests[index];
-                      final contestId = contest.id;
-                      final date = DateTime.parse(contest['date']);
-                      final participants = List<String>.from(contest['participants']);
-                      return ListTile(
-                        title: Text('Контест от ${date.toIso8601String().split('T').first}'),
-                        subtitle: Text('Участников: ${participants.length}'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete),
-                          onPressed: () => _deleteContest(contestId),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
+            const Text(
+              'Существующие контесты:',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            StreamBuilder<QuerySnapshot>(
+              stream: _firestore.collection('contests').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Text('Ошибка: ${snapshot.error}');
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final contests = snapshot.data!.docs;
+                return ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: contests.length,
+                  itemBuilder: (context, index) {
+                    final contest = contests[index];
+                    final contestId = contest.id;
+                    final testTypeId = contest['test_type_id'] as String;
+                    final language = contest['language'] as String? ?? 'Не указан';
+                    final date = DateTime.parse(contest['date']);
+                    final isRestricted = contest['is_restricted'] as bool;
+                    final participants = List<String>.from(contest['participants']);
+
+                    return FutureBuilder<DocumentSnapshot>(
+                      future: _firestore.collection('test_types').doc(testTypeId).get(),
+                      builder: (context, testTypeSnapshot) {
+                        if (testTypeSnapshot.connectionState == ConnectionState.waiting) {
+                          return const ListTile(title: Text('Загрузка...'));
+                        }
+                        final testTypeName = testTypeSnapshot.data?['name'] ?? 'Неизвестный тест';
+                        return ListTile(
+                          title: Text('Контест: $testTypeName ($language)'),
+                          subtitle: Text(
+                            'Дата: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(date)}\n'
+                            'Тип: ${isRestricted ? 'Ограниченный' : 'Открытый'}\n'
+                            'Участников: ${participants.length}',
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete),
+                            onPressed: () => _deleteContest(contestId),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                );
+              },
             ),
           ],
-        ],
+        ),
       ),
     );
   }
