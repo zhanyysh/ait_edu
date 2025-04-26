@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'settings.dart';
 import 'contests.dart';
+import 'training.dart'; // Import the training.dart file
 import 'dart:math';
 import 'package:intl/intl.dart';
 
@@ -25,7 +26,7 @@ class HomePageState extends State<HomePage> {
     super.initState();
     _pages = [
       const TestSelectionPage(),
-      const TrainingPage(),
+      const TrainingPage(), // Reference the TrainingPage from training.dart
       const ContestsPage(),
       const HistoryPage(),
       SettingsPage(onThemeChanged: widget.onThemeChanged),
@@ -970,90 +971,6 @@ class TestPageState extends State<TestPage> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class TrainingPage extends StatelessWidget {
-  const TrainingPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Обучающие материалы',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('test_types').snapshots(),
-              builder: (context, testTypesSnapshot) {
-                if (testTypesSnapshot.hasError) {
-                  return Text('Ошибка: ${testTypesSnapshot.error}');
-                }
-                if (testTypesSnapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final testTypes = testTypesSnapshot.data!.docs;
-                return ListView.builder(
-                  itemCount: testTypes.length,
-                  itemBuilder: (context, index) {
-                    final testType = testTypes[index];
-                    final testTypeId = testType.id;
-                    final testTypeName = testType['name'] as String;
-                    return ExpansionTile(
-                      title: Text(testTypeName),
-                      children: [
-                        StreamBuilder<QuerySnapshot>(
-                          stream: FirebaseFirestore.instance
-                              .collection('test_types')
-                              .doc(testTypeId)
-                              .collection('study_materials')
-                              .snapshots(),
-                          builder: (context, materialsSnapshot) {
-                            if (materialsSnapshot.hasError) {
-                              return Text('Ошибка: ${materialsSnapshot.error}');
-                            }
-                            if (materialsSnapshot.connectionState == ConnectionState.waiting) {
-                              return const Center(child: CircularProgressIndicator());
-                            }
-                            final materials = materialsSnapshot.data!.docs;
-                            if (materials.isEmpty) {
-                              return const Padding(
-                                padding: EdgeInsets.all(8.0),
-                                child: Text('Нет материалов'),
-                              );
-                            }
-                            return ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: materials.length,
-                              itemBuilder: (context, index) {
-                                final material = materials[index];
-                                final title = material['title'] as String;
-                                final content = material['content'] as String;
-                                return ListTile(
-                                  title: Text(title),
-                                  subtitle: Text(content),
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ],
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
       ),
     );
   }

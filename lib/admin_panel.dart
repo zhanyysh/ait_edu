@@ -916,27 +916,27 @@ class _QuestionsTabState extends State<QuestionsTab> {
                       return DropdownMenuItem<String>(
                         value: category.id,
                         child: Text(category['name']),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedCategoryId = value;
-                        _selectedLanguage = null;
-                        _editingQuestionId = null;
-                        _questionTextController.clear();
-                        for (var controller in _optionControllers) {
-                          controller.clear();
-                        }
-                        _correctAnswer = null;
-                        _explanationController.clear();
-                      });
-                    },
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedCategoryId = value;
+                      _selectedLanguage = null;
+                      _editingQuestionId = null;
+                      _questionTextController.clear();
+                      for (var controller in _optionControllers) {
+                        controller.clear();
+                      }
+                      _correctAnswer = null;
+                      _explanationController.clear();
+                    });
+                  },
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                  ),
+                );
+              },
+            ),
             const SizedBox(height: 16),
             if (_selectedCategoryId != null)
               StreamBuilder<DocumentSnapshot>(
@@ -1466,14 +1466,25 @@ class StudyMaterialsTab extends StatefulWidget {
 class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String? _selectedTestTypeId;
+  String? _selectedLanguage;
   final TextEditingController _materialTitleController = TextEditingController();
   final TextEditingController _materialContentController = TextEditingController();
+  final TextEditingController _miniTestQuestionController = TextEditingController();
+  final List<TextEditingController> _miniTestOptionControllers = [
+    TextEditingController(),
+    TextEditingController(),
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  String? _miniTestCorrectAnswer;
+  final TextEditingController _miniTestExplanationController = TextEditingController();
   String? _editingMaterialId;
+  String? _editingMiniTestId;
 
   Future<void> _addOrUpdateMaterial() async {
-    if (_selectedTestTypeId == null) {
+    if (_selectedTestTypeId == null || _selectedLanguage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Выберите вид теста')),
+        const SnackBar(content: Text('Выберите вид теста и язык')),
       );
       return;
     }
@@ -1494,6 +1505,7 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
             .add({
           'title': _materialTitleController.text,
           'content': _materialContentController.text,
+          'language': _selectedLanguage,
           'created_at': DateTime.now().toIso8601String(),
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1508,6 +1520,7 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
             .update({
           'title': _materialTitleController.text,
           'content': _materialContentController.text,
+          'language': _selectedLanguage,
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Материал обновлён')),
@@ -1544,81 +1557,298 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
     }
   }
 
+  Future<void> _addOrUpdateMiniTest(String materialId) async {
+    if (_miniTestQuestionController.text.isEmpty ||
+        _miniTestOptionControllers.any((controller) => controller.text.isEmpty) ||
+        _miniTestCorrectAnswer == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Заполните все поля мини-теста')),
+      );
+      return;
+    }
+
+    try {
+      final options = _miniTestOptionControllers.map((controller) => controller.text).toList();
+
+      if (_editingMiniTestId == null) {
+        await _firestore
+            .collection('test_types')
+            .doc(_selectedTestTypeId)
+            .collection('study_materials')
+            .doc(materialId)
+            .collection('mini_tests')
+            .add({
+          'text': _miniTestQuestionController.text,
+          'options': options,
+          'correct_answer': _miniTestCorrectAnswer,
+          'explanation': _miniTestExplanationController.text,
+          'language': _selectedLanguage,
+          'created_at': DateTime.now().toIso8601String(),
+          'created_by': FirebaseAuth.instance.currentUser?.uid,
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Мини-тест добавлен')),
+        );
+      } else {
+        await _firestore
+            .collection('test_types')
+            .doc(_selectedTestTypeId)
+            .collection('study_materials')
+            .doc(materialId)
+            .collection('mini_tests')
+            .doc(_editingMiniTestId)
+            .update({
+          'text': _miniTestQuestionController.text,
+          'options': options,
+          'correct_answer': _miniTestCorrectAnswer,
+          'explanation': _miniTestExplanationController.text,
+          'language': _selectedLanguage,
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Мини-тест обновлён')),
+        );
+      }
+
+      _miniTestQuestionController.clear();
+      for (var controller in _miniTestOptionControllers) {
+        controller.clear();
+      }
+      _miniTestCorrectAnswer = null;
+      _miniTestExplanationController.clear();
+      setState(() {
+        _editingMiniTestId = null;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e')),
+      );
+    }
+  }
+
+  Future<void> _deleteMiniTest(String materialId, String miniTestId) async {
+    try {
+      await _firestore
+          .collection('test_types')
+          .doc(_selectedTestTypeId)
+          .collection('study_materials')
+          .doc(materialId)
+          .collection('mini_tests')
+          .doc(miniTestId)
+          .delete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Мини-тест удалён')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка при удалении: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Управление материалами',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          StreamBuilder<QuerySnapshot>(
-            stream: _firestore.collection('test_types').snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Text('Ошибка: ${snapshot.error}');
-              }
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const CircularProgressIndicator();
-              }
-              final testTypes = snapshot.data!.docs;
-              return DropdownButtonFormField<String>(
-                value: _selectedTestTypeId,
-                hint: const Text('Выберите вид теста'),
-                items: testTypes.map((testType) {
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Управление материалами',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            StreamBuilder<QuerySnapshot>(
+              stream: _firestore.collection('test_types').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Text('Ошибка: ${snapshot.error}');
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const CircularProgressIndicator();
+                }
+                final testTypes = snapshot.data!.docs;
+                return DropdownButtonFormField<String>(
+                  value: _selectedTestTypeId,
+                  hint: const Text('Выберите вид теста'),
+                  items: testTypes.map((testType) {
+                    return DropdownMenuItem<String>(
+                      value: testType.id,
+                      child: Text(testType['name']),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedTestTypeId = value;
+                      _selectedLanguage = null;
+                      _editingMaterialId = null;
+                      _editingMiniTestId = null;
+                      _materialTitleController.clear();
+                      _materialContentController.clear();
+                      _miniTestQuestionController.clear();
+                      for (var controller in _miniTestOptionControllers) {
+                        controller.clear();
+                      }
+                      _miniTestCorrectAnswer = null;
+                      _miniTestExplanationController.clear();
+                    });
+                  },
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            if (_selectedTestTypeId != null)
+              StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('test_types')
+                    .doc(_selectedTestTypeId)
+                    .collection('languages')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Text('Ошибка: ${snapshot.error}');
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const CircularProgressIndicator();
+                  }
+                  final languages = snapshot.data!.docs;
+                  return DropdownButtonFormField<String>(
+                    value: _selectedLanguage,
+                    hint: const Text('Выберите язык'),
+                    items: languages.map((lang) {
+                      return DropdownMenuItem<String>(
+                        value: lang['code'],
+                        child: Text(lang['name']),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedLanguage = value;
+                        _editingMaterialId = null;
+                        _editingMiniTestId = null;
+                        _materialTitleController.clear();
+                        _materialContentController.clear();
+                        _miniTestQuestionController.clear();
+                        for (var controller in _miniTestOptionControllers) {
+                          controller.clear();
+                        }
+                        _miniTestCorrectAnswer = null;
+                        _miniTestExplanationController.clear();
+                      });
+                    },
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                    ),
+                  );
+                },
+              ),
+            const SizedBox(height: 16),
+            if (_selectedLanguage != null) ...[
+              TextField(
+                controller: _materialTitleController,
+                decoration: const InputDecoration(
+                  labelText: 'Заголовок материала',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _materialContentController,
+                decoration: const InputDecoration(
+                  labelText: 'Содержимое материала',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 5,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _addOrUpdateMaterial,
+                child: Text(_editingMaterialId == null ? 'Добавить материал' : 'Обновить материал'),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Мини-тесты',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _miniTestQuestionController,
+                decoration: const InputDecoration(
+                  labelText: 'Текст вопроса мини-теста',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Варианты ответа:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              ..._miniTestOptionControllers.asMap().entries.map((entry) {
+                int index = entry.key;
+                TextEditingController controller = entry.value;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: TextField(
+                    controller: controller,
+                    decoration: InputDecoration(
+                      labelText: 'Вариант ${index + 1}',
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _miniTestCorrectAnswer = null;
+                      });
+                    },
+                  ),
+                );
+              }).toList(),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _miniTestCorrectAnswer,
+                hint: const Text('Правильный ответ'),
+                items: _miniTestOptionControllers
+                    .map((controller) => controller.text)
+                    .where((text) => text.isNotEmpty)
+                    .map((option) {
                   return DropdownMenuItem<String>(
-                    value: testType.id,
-                    child: Text(testType['name']),
+                    value: option,
+                    child: Text(option),
                   );
                 }).toList(),
                 onChanged: (value) {
                   setState(() {
-                    _selectedTestTypeId = value;
-                    _editingMaterialId = null;
-                    _materialTitleController.clear();
-                    _materialContentController.clear();
+                    _miniTestCorrectAnswer = value;
                   });
                 },
                 decoration: const InputDecoration(
+                  labelText: 'Правильный ответ',
                   border: OutlineInputBorder(),
                 ),
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          if (_selectedTestTypeId != null) ...[
-            TextField(
-              controller: _materialTitleController,
-              decoration: const InputDecoration(
-                labelText: 'Заголовок материала',
-                border: OutlineInputBorder(),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _materialContentController,
-              decoration: const InputDecoration(
-                labelText: 'Содержимое материала',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _miniTestExplanationController,
+                decoration: const InputDecoration(
+                  labelText: 'Объяснение',
+                  border: OutlineInputBorder(),
+                ),
               ),
-              maxLines: 5,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _addOrUpdateMaterial,
-              child: Text(_editingMaterialId == null ? 'Добавить' : 'Обновить'),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
+              const SizedBox(height: 16),
+              const Text(
+                'Существующие материалы:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              StreamBuilder<QuerySnapshot>(
                 stream: _firestore
                     .collection('test_types')
                     .doc(_selectedTestTypeId)
                     .collection('study_materials')
+                    .where('language', isEqualTo: _selectedLanguage)
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
@@ -1629,42 +1859,121 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
                   }
                   final materials = snapshot.data!.docs;
                   return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
                     itemCount: materials.length,
                     itemBuilder: (context, index) {
                       final material = materials[index];
                       final materialId = material.id;
                       final title = material['title'] as String;
                       final content = material['content'] as String;
-                      return ListTile(
+                      return ExpansionTile(
                         title: Text(title),
                         subtitle: Text(content),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit),
-                              onPressed: () {
-                                setState(() {
-                                  _editingMaterialId = materialId;
-                                  _materialTitleController.text = title;
-                                  _materialContentController.text = content;
-                                });
-                              },
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit),
+                                      onPressed: () {
+                                        setState(() {
+                                          _editingMaterialId = materialId;
+                                          _materialTitleController.text = title;
+                                          _materialContentController.text = content;
+                                        });
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete),
+                                      onPressed: () => _deleteMaterial(materialId),
+                                    ),
+                                  ],
+                                ),
+                                ElevatedButton(
+                                  onPressed: () => _addOrUpdateMiniTest(materialId),
+                                  child: Text(_editingMiniTestId == null ? 'Добавить мини-тест' : 'Обновить мини-тест'),
+                                ),
+                                const SizedBox(height: 16),
+                                StreamBuilder<QuerySnapshot>(
+                                  stream: _firestore
+                                      .collection('test_types')
+                                      .doc(_selectedTestTypeId)
+                                      .collection('study_materials')
+                                      .doc(materialId)
+                                      .collection('mini_tests')
+                                      .snapshots(),
+                                  builder: (context, miniTestSnapshot) {
+                                    if (miniTestSnapshot.hasError) {
+                                      return Text('Ошибка: ${miniTestSnapshot.error}');
+                                    }
+                                    if (miniTestSnapshot.connectionState == ConnectionState.waiting) {
+                                      return const Center(child: CircularProgressIndicator());
+                                    }
+                                    final miniTests = miniTestSnapshot.data!.docs;
+                                    return ListView.builder(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      itemCount: miniTests.length,
+                                      itemBuilder: (context, index) {
+                                        final miniTest = miniTests[index];
+                                        final miniTestId = miniTest.id;
+                                        final questionText = miniTest['text'] as String;
+                                        final options = List<String>.from(miniTest['options']);
+                                        final correctAnswer = miniTest['correct_answer'] as String;
+                                        final explanation = miniTest['explanation'] as String? ?? 'Нет объяснения';
+                                        return ListTile(
+                                          title: Text(questionText),
+                                          subtitle: Text(
+                                            'Варианты: ${options.join(', ')}\n'
+                                            'Правильный: $correctAnswer\n'
+                                            'Объяснение: $explanation',
+                                          ),
+                                          trailing: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(Icons.edit),
+                                                onPressed: () {
+                                                  setState(() {
+                                                    _editingMiniTestId = miniTestId;
+                                                    _miniTestQuestionController.text = questionText;
+                                                    for (int i = 0; i < _miniTestOptionControllers.length; i++) {
+                                                      _miniTestOptionControllers[i].text = options[i];
+                                                    }
+                                                    _miniTestCorrectAnswer = correctAnswer;
+                                                    _miniTestExplanationController.text = explanation;
+                                                  });
+                                                },
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(Icons.delete),
+                                                onPressed: () => _deleteMiniTest(materialId, miniTestId),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+                              ],
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete),
-                              onPressed: () => _deleteMaterial(materialId),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       );
                     },
                   );
                 },
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
