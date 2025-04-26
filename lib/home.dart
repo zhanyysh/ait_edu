@@ -468,10 +468,13 @@ class TestPageState extends State<TestPage> {
   final List<int> _questionsPerCategory = [];
   final List<double> _pointsPerQuestionByCategory = [];
   double _totalPoints = 0;
+  String? _testId; // Уникальный ID теста
 
   @override
   void initState() {
     super.initState();
+    // Генерируем test_id в начале теста
+    _testId = DateTime.now().millisecondsSinceEpoch.toString();
     _loadCategories();
   }
 
@@ -686,10 +689,6 @@ class TestPageState extends State<TestPage> {
     double categoryPoints = categoryCorrectAnswers * pointsPerQuestion;
     _totalPoints += categoryPoints;
 
-    if (_questions.isNotEmpty) {
-      await _saveCategoryResult();
-    }
-
     if (_currentCategoryIndex + 1 < _categories.length) {
       setState(() {
         _currentCategoryIndex++;
@@ -700,62 +699,104 @@ class TestPageState extends State<TestPage> {
     }
   }
 
-  Future<void> _saveCategoryResult() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
-    int categoryCorrectAnswers = 0;
-
-    for (int i = 0; i < _questions.length; i++) {
-      final options = (_questions[i]['options'] as List).map((option) => option.toString()).toList();
-      String correctAnswer = _questions[i]['correct_answer'] as String;
-      int? userAnswerIndex = _selectedAnswers[i];
-      String? userAnswer = userAnswerIndex != null ? options[userAnswerIndex] : null;
-      if (userAnswer == correctAnswer) {
-        categoryCorrectAnswers++;
-      }
-    }
-
-    double categoryPoints = categoryCorrectAnswers * (categoryDoc['points_per_question'] as num).toDouble();
-
-    DocumentSnapshot testTypeDoc = await _firestore.collection('test_types').doc(widget.testTypeId).get();
-    String testTypeName = testTypeDoc['name'] as String;
-    String categoryName = categoryDoc['name'] as String;
-
-    await _firestore.collection('users').doc(user.uid).collection('test_history').add({
-      'date': DateTime.now().toIso8601String(),
-      'test_type': testTypeName,
-      'category': categoryName,
-      'correct_answers': categoryCorrectAnswers,
-      'total_questions': _questions.length,
-      'points': categoryPoints,
-      'time_spent': (_duration * 60 - _timeRemaining).toInt(),
-      'total_time': (_duration * 60).toInt(),
-    });
-
-    if (widget.contestId != null) {
-      await _firestore
-          .collection('contest_results')
-          .doc(widget.contestId)
-          .collection('results')
-          .doc(user.uid)
-          .set({
-        'correct_answers': categoryCorrectAnswers,
-        'total_questions': _questions.length,
-        'points': categoryPoints,
-        'time_spent': (_duration * 60 - _timeRemaining).toInt(),
-        'completed_at': DateTime.now().toIso8601String(),
-      }, SetOptions(merge: true));
-    }
-  }
-
-  void _finishEntireTest() {
+  Future<void> _finishEntireTest() async {
     _timer?.cancel();
     if (mounted) {
       setState(() {
         _entireTestFinished = true;
       });
+    }
+
+    // Сохраняем результаты теста
+    await _saveTestResult();
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _saveTestResult() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      DocumentSnapshot testTypeDoc = await _firestore.collection('test_types').doc(widget.testTypeId).get();
+      String testTypeName = testTypeDoc['name'] as String;
+
+      // Сохраняем общую информацию о тесте
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('test_history')
+          .doc(_testId)
+          .set({
+        'test_type': testTypeName,
+        'date': DateTime.now().toIso8601String(),
+      });
+
+      // Сохраняем результаты по категориям в подколлекцию
+      for (int categoryIndex = 0; categoryIndex < _categoryNames.length; categoryIndex++) {
+        String categoryName = _categoryNames[categoryIndex];
+        double pointsPerQuestion = _pointsPerQuestionByCategory[categoryIndex];
+        int startIndex = categoryIndex == 0
+            ? 0
+            : _questionsPerCategory
+                .sublist(0, categoryIndex)
+                .fold(0, (sum, count) => sum + count);
+        int endIndex = startIndex + _questionsPerCategory[categoryIndex];
+
+        int categoryCorrectAnswers = 0;
+        for (int i = startIndex; i < endIndex; i++) {
+          String correctAnswer = _allCorrectAnswers[i];
+          int? userAnswerIndex = _allSelectedAnswers[i];
+          final options = (_allQuestions[i]['options'] as List).map((option) => option.toString()).toList();
+          String? userAnswer = userAnswerIndex != null ? options[userAnswerIndex] : null;
+          if (userAnswer == correctAnswer) {
+            categoryCorrectAnswers++;
+          }
+        }
+
+        double categoryPoints = categoryCorrectAnswers * pointsPerQuestion;
+        int categoryTimeSpent = (_duration * 60 - _timeRemaining).toInt();
+        int categoryTotalTime = (_duration * 60).toInt();
+
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('test_history')
+            .doc(_testId)
+            .collection('categories')
+            .add({
+          'category': categoryName,
+          'correct_answers': categoryCorrectAnswers,
+          'total_questions': _questionsPerCategory[categoryIndex],
+          'points': categoryPoints,
+          'time_spent': categoryTimeSpent,
+          'total_time': categoryTotalTime,
+        });
+
+        if (widget.contestId != null) {
+          await _firestore
+              .collection('contest_results')
+              .doc(widget.contestId)
+              .collection('results')
+              .doc(user.uid)
+              .set({
+            'correct_answers': categoryCorrectAnswers,
+            'total_questions': _questionsPerCategory[categoryIndex],
+            'points': categoryPoints,
+            'time_spent': categoryTimeSpent,
+            'completed_at': DateTime.now().toIso8601String(),
+          }, SetOptions(merge: true));
+        }
+      }
+    } catch (e) {
+      debugPrint('TestPage: Ошибка сохранения результатов теста: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка сохранения результатов: $e')),
+        );
+      }
     }
   }
 
