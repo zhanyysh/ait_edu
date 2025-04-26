@@ -3,9 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'settings.dart';
 import 'contests.dart';
-import 'training.dart'; // Import the training.dart file
+import 'training.dart';
+import 'history.dart';
 import 'dart:math';
 import 'package:intl/intl.dart';
+import 'dart:async';
 
 class HomePage extends StatefulWidget {
   final Function(String) onThemeChanged;
@@ -26,11 +28,10 @@ class HomePageState extends State<HomePage> {
     super.initState();
     _pages = [
       const TestSelectionPage(),
-      const TrainingPage(), // Reference the TrainingPage from training.dart
+      const TrainingPage(),
       const ContestsPage(),
       const HistoryPage(),
       SettingsPage(onThemeChanged: widget.onThemeChanged),
-      const MyResultsPage(),
     ];
   }
 
@@ -71,10 +72,6 @@ class HomePageState extends State<HomePage> {
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
             label: 'Настройки',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.star),
-            label: 'Результаты',
           ),
         ],
       ),
@@ -462,6 +459,7 @@ class TestPageState extends State<TestPage> {
   int _timeRemaining = 0;
   bool _isLoading = true;
   bool _entireTestFinished = false;
+  Timer? _timer;
 
   final List<DocumentSnapshot> _allQuestions = [];
   final List<int?> _allSelectedAnswers = [];
@@ -475,6 +473,12 @@ class TestPageState extends State<TestPage> {
   void initState() {
     super.initState();
     _loadCategories();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadCategories() async {
@@ -623,14 +627,17 @@ class TestPageState extends State<TestPage> {
   }
 
   void _startTimer() {
-    Future.delayed(const Duration(seconds: 1), () {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_timeRemaining > 0 && !_entireTestFinished && mounted) {
         setState(() {
           _timeRemaining--;
         });
-        _startTimer();
       } else if (_timeRemaining <= 0 && !_entireTestFinished) {
         _finishCategory();
+        timer.cancel();
+      } else {
+        timer.cancel();
       }
     });
   }
@@ -642,6 +649,7 @@ class TestPageState extends State<TestPage> {
   }
 
   Future<void> _finishCategory() async {
+    _timer?.cancel();
     if (_selectedAnswers.contains(null)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -715,7 +723,6 @@ class TestPageState extends State<TestPage> {
     String testTypeName = testTypeDoc['name'] as String;
     String categoryName = categoryDoc['name'] as String;
 
-    // Сохранение в историю пользователя
     await _firestore.collection('users').doc(user.uid).collection('test_history').add({
       'date': DateTime.now().toIso8601String(),
       'test_type': testTypeName,
@@ -727,7 +734,6 @@ class TestPageState extends State<TestPage> {
       'total_time': (_duration * 60).toInt(),
     });
 
-    // Сохранение в результаты контеста, если это контест
     if (widget.contestId != null) {
       await _firestore
           .collection('contest_results')
@@ -745,6 +751,7 @@ class TestPageState extends State<TestPage> {
   }
 
   void _finishEntireTest() {
+    _timer?.cancel();
     if (mounted) {
       setState(() {
         _entireTestFinished = true;
@@ -760,6 +767,7 @@ class TestPageState extends State<TestPage> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
+            _timer?.cancel();
             Navigator.pop(context);
           },
         ),
@@ -972,597 +980,6 @@ class TestPageState extends State<TestPage> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class HistoryPage extends StatefulWidget {
-  const HistoryPage({super.key});
-
-  @override
-  HistoryPageState createState() => HistoryPageState();
-}
-
-class HistoryPageState extends State<HistoryPage> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  List<Map<String, String>> _testTypes = [];
-  String? _selectedTestType;
-  List<Map<String, String>> _categories = [];
-  String _sortBy = 'date_desc';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadTestTypes();
-    _loadSelectedTestType();
-  }
-
-  Future<void> _loadTestTypes() async {
-    try {
-      QuerySnapshot testTypesSnapshot = await _firestore.collection('test_types').get();
-      if (mounted) {
-        setState(() {
-          _testTypes = testTypesSnapshot.docs.map((doc) {
-            return {
-              'id': doc.id,
-              'name': doc['name'] as String,
-            };
-          }).toList();
-        });
-      }
-    } catch (e) {
-      debugPrint('HistoryPage: Ошибка загрузки видов тестов: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка загрузки видов тестов: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _loadCategories(String? testType) async {
-    try {
-      List<Map<String, String>> categories = [];
-      if (testType == null) {
-        for (var testTypeMap in _testTypes) {
-          final testTypeId = testTypeMap['id']!;
-          final testTypeName = testTypeMap['name']!;
-          QuerySnapshot categoriesSnapshot = await _firestore
-              .collection('test_types')
-              .doc(testTypeId)
-              .collection('categories')
-              .get();
-          categories.addAll(categoriesSnapshot.docs.map((doc) => {
-                'test_type': testTypeName,
-                'category': doc['name'] as String,
-              }));
-        }
-      } else {
-        final testTypeId = _testTypes.firstWhere((t) => t['name'] == testType)['id']!;
-        final testTypeName = testType;
-        QuerySnapshot categoriesSnapshot = await _firestore
-            .collection('test_types')
-            .doc(testTypeId)
-            .collection('categories')
-            .get();
-        categories = categoriesSnapshot.docs.map((doc) => {
-              'test_type': testTypeName,
-              'category': doc['name'] as String,
-            }).toList();
-      }
-      if (mounted) {
-        setState(() {
-          _categories = categories;
-        });
-      }
-    } catch (e) {
-      debugPrint('HistoryPage: Ошибка загрузки категорий: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка загрузки категорий: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _loadSelectedTestType() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    try {
-      DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
-      if (userDoc.exists && userDoc.data() != null) {
-        Map<String, dynamic> data = userDoc.data() as Map<String, dynamic>;
-        if (data.containsKey('history_filter')) {
-          String? selectedTestType = data['history_filter'] as String?;
-          if (mounted) {
-            setState(() {
-              _selectedTestType = selectedTestType;
-            });
-            await _loadCategories(selectedTestType);
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('HistoryPage: Ошибка загрузки фильтра истории: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка загрузки фильтра истории: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _saveSelectedTestType() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    try {
-      await _firestore.collection('users').doc(user.uid).update({
-        'history_filter': _selectedTestType,
-      });
-    } catch (e) {
-      debugPrint('HistoryPage: Ошибка сохранения фильтра истории: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка сохранения фильтра истории: $e')),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final user = _auth.currentUser;
-
-    if (user == null) {
-      return const Center(child: Text('Пользователь не авторизован'));
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'История тестов',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              TextButton(
-                onPressed: () async {
-                  bool? confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Очистить историю?'),
-                      content: const Text('Вы уверены, что хотите удалить всю историю тестов? Это действие нельзя отменить.'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Отмена'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Очистить', style: TextStyle(color: Colors.red)),
-                        ),
-                      ],
-                    ),
-                  );
-
-                  if (confirm == true) {
-                    QuerySnapshot historySnapshot = await _firestore
-                        .collection('users')
-                        .doc(user.uid)
-                        .collection('test_history')
-                        .get();
-                    for (var doc in historySnapshot.docs) {
-                      await doc.reference.delete();
-                    }
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('История очищена')),
-                    );
-                  }
-                },
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
-                child: const Text('Очистить историю'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _selectedTestType,
-                  hint: const Text('Выберите вид теста'),
-                  items: [
-                    const DropdownMenuItem<String>(
-                      value: null,
-                      child: Text('Все тесты'),
-                    ),
-                    ..._testTypes.map((testType) {
-                      return DropdownMenuItem<String>(
-                        value: testType['name'],
-                        child: Text(testType['name']!),
-                      );
-                    }).toList(),
-                  ],
-                  onChanged: (value) async {
-                    setState(() {
-                      _selectedTestType = value;
-                    });
-                    await _loadCategories(value);
-                    await _saveSelectedTestType();
-                  },
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Colors.blue),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Colors.blue),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Colors.blue, width: 2),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _sortBy,
-                  items: const [
-                    DropdownMenuItem<String>(
-                      value: 'date_desc',
-                      child: Text('Дата (убыв.)'),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'date_asc',
-                      child: Text('Дата (возр.)'),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'points_desc',
-                      child: Text('Баллы (убыв.)'),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'points_asc',
-                      child: Text('Баллы (возр.)'),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'percent_desc',
-                      child: Text('Процент (убыв.)'),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'percent_asc',
-                      child: Text('Процент (возр.)'),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _sortBy = value!;
-                    });
-                  },
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Colors.grey),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Colors.grey),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Colors.blue, width: 2),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _firestore
-                  .collection('users')
-                  .doc(user.uid)
-                  .collection('test_history')
-                  .orderBy('date', descending: true)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Text('Ошибка: ${snapshot.error}');
-                }
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final history = snapshot.data!.docs;
-
-                final filteredHistory = _selectedTestType == null
-                    ? history
-                    : history.where((doc) => doc['test_type'] == _selectedTestType).toList();
-
-                if (filteredHistory.isEmpty) {
-                  return const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'История пуста',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Пройдите тест, чтобы увидеть результаты здесь.',
-                          style: TextStyle(fontSize: 14, color: Colors.grey),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                int totalTimeSpent = 0;
-                int totalTime = 0;
-                double totalPoints = 0;
-
-                for (var record in filteredHistory) {
-                  totalTimeSpent += record['time_spent'] as int;
-                  totalTime += record['total_time'] as int;
-                  totalPoints += (record['points'] as num).toDouble();
-                }
-
-                final Map<String, List<Map<String, dynamic>>> groupedHistory = {};
-                for (var record in filteredHistory) {
-                  final date = DateTime.parse(record['date']).toString().split(' ')[0];
-                  if (!groupedHistory.containsKey(date)) {
-                    groupedHistory[date] = [];
-                  }
-                  groupedHistory[date]!.add({
-                    'record': record,
-                    'test_type': record['test_type'] as String,
-                    'category': record['category'] as String,
-                    'points': (record['points'] as num).toDouble(),
-                    'correct_answers': record['correct_answers'] as int,
-                    'total_questions': record['total_questions'] as int,
-                    'time_spent': record['time_spent'] as int,
-                    'total_time': record['total_time'] as int,
-                  });
-                }
-
-                List<Map<String, dynamic>> historyEntries = groupedHistory.entries.map((entry) {
-                  final date = entry.key;
-                  final records = entry.value;
-
-                  final totalPointsForDate = records.fold<double>(
-                    0.0,
-                    (sum, r) => sum + (r['points'] as double),
-                  );
-
-                  final totalCorrectAnswers = records.fold<int>(
-                    0,
-                    (sum, r) => sum + (r['correct_answers'] as int),
-                  );
-                  final totalQuestions = records.fold<int>(
-                    0,
-                    (sum, r) => sum + (r['total_questions'] as int),
-                  );
-                  final percentage = totalQuestions > 0 ? (totalCorrectAnswers / totalQuestions * 100) : 0.0;
-
-                  final totalTimeSpentForDate = records.fold<int>(
-                    0,
-                    (sum, r) => sum + (r['time_spent'] as int),
-                  );
-
-                  final Map<String, double> categoryPoints = {};
-                  for (var record in records) {
-                    final testType = record['test_type'] as String;
-                    final category = record['category'] as String;
-                    final key = '$testType:$category';
-                    final points = record['points'] as double;
-                    categoryPoints[key] = points;
-                  }
-
-                  return {
-                    'date': DateTime.parse(date),
-                    'records': records,
-                    'total_points': totalPointsForDate,
-                    'percentage': percentage,
-                    'time_spent': totalTimeSpentForDate,
-                    'category_points': categoryPoints,
-                  };
-                }).toList();
-
-                if (_sortBy == 'date_asc') {
-                  historyEntries.sort((a, b) => a['date'].compareTo(b['date']));
-                } else if (_sortBy == 'date_desc') {
-                  historyEntries.sort((a, b) => b['date'].compareTo(a['date']));
-                } else if (_sortBy == 'points_asc') {
-                  historyEntries.sort((a, b) => a['total_points'].compareTo(b['total_points']));
-                } else if (_sortBy == 'points_desc') {
-                  historyEntries.sort((a, b) => b['total_points'].compareTo(a['total_points']));
-                } else if (_sortBy == 'percent_asc') {
-                  historyEntries.sort((a, b) => a['percentage'].compareTo(b['percentage']));
-                } else if (_sortBy == 'percent_desc') {
-                  historyEntries.sort((a, b) => b['percentage'].compareTo(a['percentage']));
-                }
-
-                List<DataColumn> columns = [
-                  const DataColumn(
-                    label: Text(
-                      'Дата',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  ..._categories.map((categoryMap) => DataColumn(
-                        label: SizedBox(
-                          width: 100,
-                          child: Text(
-                            '${categoryMap['test_type']}: ${categoryMap['category']}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )),
-                  const DataColumn(
-                    label: Text(
-                      'Процент правильных',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const DataColumn(
-                    label: Text(
-                      'Время',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const DataColumn(
-                    label: Text(
-                      'Общий балл',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ];
-
-                List<DataRow> rows = historyEntries.map((entry) {
-                  final date = entry['date'] as DateTime;
-                  final records = entry['records'] as List<Map<String, dynamic>>;
-                  final totalPointsForDate = entry['total_points'] as double;
-                  final percentage = entry['percentage'] as double;
-                  final timeSpent = entry['time_spent'] as int;
-                  final categoryPoints = entry['category_points'] as Map<String, double>;
-
-                  final formattedDate = DateFormat('d MMMM yyyy', 'ru').format(date);
-
-                  List<DataCell> cells = [
-                    DataCell(Text(formattedDate)),
-                    ..._categories.map((categoryMap) {
-                      final key = '${categoryMap['test_type']}:${categoryMap['category']}';
-                      return DataCell(
-                        Text(
-                          categoryPoints.containsKey(key)
-                              ? categoryPoints[key]!.toStringAsFixed(1)
-                              : 'N/A',
-                          style: TextStyle(
-                            color: categoryPoints.containsKey(key)
-                                ? (categoryPoints[key]! >= 80
-                                    ? Colors.green
-                                    : categoryPoints[key]! < 50
-                                        ? Colors.red
-                                        : Colors.orange)
-                                : Colors.grey,
-                          ),
-                        ),
-                      );
-                    }),
-                    DataCell(Text('${percentage.toStringAsFixed(1)}%')),
-                    DataCell(Text('${timeSpent ~/ 60} мин')),
-                    DataCell(Text(totalPointsForDate.toStringAsFixed(1))),
-                  ];
-
-                  return DataRow(
-                    cells: cells,
-                    onSelectChanged: (selected) {
-                      if (selected == true) {
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text('Результаты за $formattedDate'),
-                            content: SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: records.map((r) {
-                                  final record = r['record'] as QueryDocumentSnapshot;
-                                  final testType = record['test_type'] as String;
-                                  final category = record['category'] as String;
-                                  final correctAnswers = record['correct_answers'] as int;
-                                  final totalQuestions = record['total_questions'] as int;
-                                  final points = (record['points'] as num).toDouble();
-                                  final timeSpentRecord = record['time_spent'] as int;
-                                  final totalTime = record['total_time'] as int;
-                                  final percentageRecord = totalQuestions > 0
-                                      ? (correctAnswers / totalQuestions * 100).toStringAsFixed(1)
-                                      : '0.0';
-
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 16.0),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          '$testType: $category',
-                                          style: const TextStyle(fontWeight: FontWeight.bold),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text('Правильных ответов: $correctAnswers/$totalQuestions ($percentageRecord%)'),
-                                        const SizedBox(height: 4),
-                                        Text('Баллы: $points'),
-                                        const SizedBox(height: 4),
-                                        Text('Время: ${timeSpentRecord ~/ 60} мин из ${totalTime ~/ 60} мин'),
-                                        const Divider(),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text('Закрыть'),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-                    },
-                  );
-                }).toList();
-
-                return SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
-                          columns: columns,
-                          rows: rows,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Text(
-                          'Общий итог: ${totalTimeSpent ~/ 60} мин/${totalTime ~/ 60} мин, общий балл: $totalPoints',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class MyResultsPage extends StatelessWidget {
-  const MyResultsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Text('Мои результаты (заглушка, уточните функционал)'),
     );
   }
 }
