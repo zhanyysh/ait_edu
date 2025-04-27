@@ -105,23 +105,47 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
 
     try {
       DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
-      if (userDoc.exists && userDoc['history_filters'] != null) {
-        Map<String, dynamic> filters = userDoc['history_filters'] as Map<String, dynamic>;
-        if (mounted) {
-          setState(() {
-            _filters = HistoryFilters(
-              testType: filters['test_type'] as String?,
-              startDate: filters['start_date'] != null
-                  ? DateTime.parse(filters['start_date'])
-                  : null,
-              endDate: filters['end_date'] != null
-                  ? DateTime.parse(filters['end_date'])
-                  : null,
-            );
-            _startDate = _filters.startDate;
-            _endDate = _filters.endDate;
-          });
-        }
+      if (!userDoc.exists) {
+        // Если документ пользователя не существует, создаём его с пустыми фильтрами
+        await _firestore.collection('users').doc(user.uid).set({
+          'history_filters': {
+            'test_type': null,
+            'start_date': null,
+            'end_date': null,
+          },
+        }, SetOptions(merge: true));
+        return;
+      }
+
+      // Получаем данные документа
+      Map<String, dynamic>? data = userDoc.data() as Map<String, dynamic>?;
+      if (data == null || !data.containsKey('history_filters')) {
+        // Если поле history_filters отсутствует, создаём его
+        await _firestore.collection('users').doc(user.uid).set({
+          'history_filters': {
+            'test_type': null,
+            'start_date': null,
+            'end_date': null,
+          },
+        }, SetOptions(merge: true));
+        return;
+      }
+
+      Map<String, dynamic> filters = data['history_filters'] as Map<String, dynamic>;
+      if (mounted) {
+        setState(() {
+          _filters = HistoryFilters(
+            testType: filters['test_type'] as String?,
+            startDate: filters['start_date'] != null
+                ? DateTime.parse(filters['start_date'])
+                : null,
+            endDate: filters['end_date'] != null
+                ? DateTime.parse(filters['end_date'])
+                : null,
+          );
+          _startDate = _filters.startDate;
+          _endDate = _filters.endDate;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -135,13 +159,13 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
     if (user == null) return;
 
     try {
-      await _firestore.collection('users').doc(user.uid).update({
+      await _firestore.collection('users').doc(user.uid).set({
         'history_filters': {
           'test_type': _filters.testType,
           'start_date': _filters.startDate?.toIso8601String(),
           'end_date': _filters.endDate?.toIso8601String(),
         },
-      });
+      }, SetOptions(merge: true));
     } catch (e) {
       if (mounted) {
         _showError('Ошибка сохранения фильтров: $e');
@@ -178,62 +202,132 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
         query = query.startAfterDocument(_lastDoc!);
       }
 
-      if (_filters.testType != null) {
-        query = query.where('test_type', isEqualTo: _filters.testType);
-      }
-      if (_filters.startDate != null) {
-        query = query.where('date',
-            isGreaterThanOrEqualTo: _filters.startDate!.toIso8601String());
-      }
-      if (_filters.endDate != null) {
-        query = query.where('date',
-            isLessThanOrEqualTo: _filters.endDate!.toIso8601String());
-      }
+      // Применяем фильтры
+      try {
+        if (_filters.testType != null) {
+          query = query.where('test_type', isEqualTo: _filters.testType);
+        }
+        if (_filters.startDate != null) {
+          query = query.where('date',
+              isGreaterThanOrEqualTo: _filters.startDate!.toIso8601String());
+        }
+        if (_filters.endDate != null) {
+          query = query.where('date',
+              isLessThanOrEqualTo: _filters.endDate!.toIso8601String());
+        }
 
-      QuerySnapshot snapshot = await query.get();
+        QuerySnapshot snapshot = await query.get();
 
-      if (reset) {
-        _tests.clear();
-      }
+        if (reset) {
+          _tests.clear();
+        }
 
-      List<Map<String, dynamic>> loadedTests = [];
-      for (var testDoc in snapshot.docs) {
-        QuerySnapshot categoriesSnapshot = await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('test_history')
-            .doc(testDoc.id)
-            .collection('categories')
-            .get();
+        List<Map<String, dynamic>> loadedTests = [];
+        for (var testDoc in snapshot.docs) {
+          QuerySnapshot categoriesSnapshot = await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .collection('test_history')
+              .doc(testDoc.id)
+              .collection('categories')
+              .get();
 
-        List<Map<String, dynamic>> categories = categoriesSnapshot.docs.map((catDoc) {
-          return {
-            'category': catDoc['category'] as String,
-            'points': (catDoc['points'] as num).toDouble(),
-            'correct_answers': catDoc['correct_answers'] as int,
-            'total_questions': catDoc['total_questions'] as int,
-            'time_spent': catDoc['time_spent'] as int,
-            'total_time': catDoc['total_time'] as int,
-          };
-        }).toList();
+          List<Map<String, dynamic>> categories = categoriesSnapshot.docs.map((catDoc) {
+            return {
+              'category': catDoc['category'] as String,
+              'points': (catDoc['points'] as num).toDouble(),
+              'correct_answers': catDoc['correct_answers'] as int,
+              'total_questions': catDoc['total_questions'] as int,
+              'time_spent': catDoc['time_spent'] as int,
+              'total_time': catDoc['total_time'] as int,
+            };
+          }).toList();
 
-        loadedTests.add({
-          'test_id': testDoc.id,
-          'test_type': testDoc['test_type'] as String,
-          'date': testDoc['date'] as String,
-          'categories': categories,
-        });
-      }
+          loadedTests.add({
+            'test_id': testDoc.id,
+            'test_type': testDoc['test_type'] as String,
+            'date': testDoc['date'] as String,
+            'categories': categories,
+          });
+        }
 
-      if (mounted) {
-        setState(() {
-          _tests.addAll(loadedTests);
-          _lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
-          _hasMore = snapshot.docs.length == _pageSize;
-          _isLoading = false;
-        });
-        _animationController.reset();
-        _animationController.forward();
+        if (mounted) {
+          setState(() {
+            _tests.addAll(loadedTests);
+            _lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+            _hasMore = snapshot.docs.length == _pageSize;
+            _isLoading = false;
+          });
+          _animationController.reset();
+          _animationController.forward();
+        }
+      } catch (e) {
+        // Если Firestore требует индекс, загружаем данные без фильтров
+        if (e.toString().contains('requires an index')) {
+          if (mounted) {
+            _showError(
+                'Для использования фильтров требуется создать индекс в Firestore. Пожалуйста, обратитесь к администратору или загрузите данные без фильтров.');
+          }
+          // Загружаем без фильтров
+          Query<Map<String, dynamic>> fallbackQuery = _firestore
+              .collection('users')
+              .doc(user.uid)
+              .collection('test_history')
+              .orderBy('date', descending: true)
+              .limit(_pageSize);
+
+          if (_lastDoc != null && !reset) {
+            fallbackQuery = fallbackQuery.startAfterDocument(_lastDoc!);
+          }
+
+          QuerySnapshot snapshot = await fallbackQuery.get();
+
+          if (reset) {
+            _tests.clear();
+          }
+
+          List<Map<String, dynamic>> loadedTests = [];
+          for (var testDoc in snapshot.docs) {
+            QuerySnapshot categoriesSnapshot = await _firestore
+                .collection('users')
+                .doc(user.uid)
+                .collection('test_history')
+                .doc(testDoc.id)
+                .collection('categories')
+                .get();
+
+            List<Map<String, dynamic>> categories = categoriesSnapshot.docs.map((catDoc) {
+              return {
+                'category': catDoc['category'] as String,
+                'points': (catDoc['points'] as num).toDouble(),
+                'correct_answers': catDoc['correct_answers'] as int,
+                'total_questions': catDoc['total_questions'] as int,
+                'time_spent': catDoc['time_spent'] as int,
+                'total_time': catDoc['total_time'] as int,
+              };
+            }).toList();
+
+            loadedTests.add({
+              'test_id': testDoc.id,
+              'test_type': testDoc['test_type'] as String,
+              'date': testDoc['date'] as String,
+              'categories': categories,
+            });
+          }
+
+          if (mounted) {
+            setState(() {
+              _tests.addAll(loadedTests);
+              _lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+              _hasMore = snapshot.docs.length == _pageSize;
+              _isLoading = false;
+            });
+            _animationController.reset();
+            _animationController.forward();
+          }
+        } else {
+          throw e; // Перебрасываем другие ошибки
+        }
       }
     } catch (e) {
       if (mounted) {
