@@ -172,7 +172,34 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
     }
   }
 
-  void _startContest(String contestId, String testTypeId, String language) {
+  Future<bool> _hasUserCompletedContest(String contestId) async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+
+    DocumentSnapshot resultDoc = await _firestore
+        .collection('contest_results')
+        .doc(contestId)
+        .collection('results')
+        .doc(user.uid)
+        .get();
+    return resultDoc.exists;
+  }
+
+  void _startContest(String contestId, String testTypeId, String language) async {
+    bool hasCompleted = await _hasUserCompletedContest(contestId);
+    if (hasCompleted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Вы уже прошли этот тест. Посмотрите результаты.',
+            style: TextStyle(color: _currentTheme == 'light' ? Colors.white : Colors.black),
+          ),
+          backgroundColor: _currentTheme == 'light' ? Colors.red : Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -307,110 +334,119 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
                             return const ListTile(title: Text('Ошибка загрузки типа теста'));
                           }
                           final testTypeName = testTypeSnapshot.data?['name'] ?? 'Неизвестный тест';
-                          return FadeTransition(
-                            opacity: _fadeAnimation,
-                            child: SlideTransition(
-                              position: _slideAnimation,
-                              child: Card(
-                                color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(15),
-                                  side: BorderSide(
-                                    color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
-                                    width: 1,
-                                  ),
-                                ),
-                                elevation: _currentTheme == 'light' ? 5 : 0,
-                                margin: const EdgeInsets.symmetric(vertical: 8.0),
-                                child: ListTile(
-                                  leading: Icon(
-                                    Icons.event,
-                                    color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                  ),
-                                  title: Text(
-                                    'Контест: $testTypeName ($language)',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                          return FutureBuilder<bool>(
+                            future: _hasUserCompletedContest(contestId),
+                            builder: (context, completedSnapshot) {
+                              if (completedSnapshot.connectionState == ConnectionState.waiting) {
+                                return const ListTile(title: Text('Проверка статуса...'));
+                              }
+                              bool hasCompleted = completedSnapshot.data ?? false;
+                              return FadeTransition(
+                                opacity: _fadeAnimation,
+                                child: SlideTransition(
+                                  position: _slideAnimation,
+                                  child: Card(
+                                    color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(15),
+                                      side: BorderSide(
+                                        color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    elevation: _currentTheme == 'light' ? 5 : 0,
+                                    margin: const EdgeInsets.symmetric(vertical: 8.0),
+                                    child: ListTile(
+                                      leading: Icon(
+                                        Icons.event,
+                                        color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                      ),
+                                      title: Text(
+                                        'Контест: $testTypeName ($language)',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                        ),
+                                      ),
+                                      subtitle: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Дата: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(date)}',
+                                            style: TextStyle(
+                                              color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Длительность: $duration мин',
+                                            style: TextStyle(
+                                              color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Тип: ${isRestricted ? 'Ограниченный' : 'Открытый'}',
+                                            style: TextStyle(
+                                              color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Участников: ${participants.length}',
+                                            style: TextStyle(
+                                              color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                            ),
+                                          ),
+                                          if (isParticipant && !isContestStarted)
+                                            Text(
+                                              _formatTimeUntil(date),
+                                              style: TextStyle(
+                                                color: _currentTheme == 'light' ? const Color(0xFF4A90E2) : const Color(0xFF8E2DE2),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      trailing: isContestEnded || hasCompleted
+                                          ? _buildAnimatedButton(
+                                              onPressed: () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (context) => ContestResultsPage(contestId: contestId),
+                                                  ),
+                                                );
+                                              },
+                                              gradientColors: _currentTheme == 'light'
+                                                  ? [const Color(0xFF4A90E2), const Color(0xFF50C9C3)]
+                                                  : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
+                                              label: 'Результаты',
+                                            )
+                                          : isContestStarted && isParticipant
+                                              ? _buildAnimatedButton(
+                                                  onPressed: () => _startContest(contestId, testTypeId, language),
+                                                  gradientColors: _currentTheme == 'light'
+                                                      ? [Colors.green, Colors.greenAccent]
+                                                      : [Colors.greenAccent, Colors.green],
+                                                  label: 'Начать',
+                                                )
+                                              : isParticipant
+                                                  ? Text(
+                                                      'Зарегистрирован',
+                                                      style: TextStyle(
+                                                        color: _currentTheme == 'light' ? Colors.green : Colors.greenAccent,
+                                                      ),
+                                                    )
+                                                  : _buildAnimatedButton(
+                                                      onPressed: () =>
+                                                          _registerForContest(contestId, isRestricted, contest['password']),
+                                                      gradientColors: _currentTheme == 'light'
+                                                          ? [const Color(0xFFFF6F61), const Color(0xFFFFB74D)]
+                                                          : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
+                                                      label: 'Зарегистрироваться',
+                                                    ),
                                     ),
                                   ),
-                                  subtitle: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Дата: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(date)}',
-                                        style: TextStyle(
-                                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Длительность: $duration мин',
-                                        style: TextStyle(
-                                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Тип: ${isRestricted ? 'Ограниченный' : 'Открытый'}',
-                                        style: TextStyle(
-                                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Участников: ${participants.length}',
-                                        style: TextStyle(
-                                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                        ),
-                                      ),
-                                      if (isParticipant && !isContestStarted)
-                                        Text(
-                                          _formatTimeUntil(date),
-                                          style: TextStyle(
-                                            color: _currentTheme == 'light' ? const Color(0xFF4A90E2) : const Color(0xFF8E2DE2),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  trailing: isContestEnded
-                                      ? _buildAnimatedButton(
-                                          onPressed: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (context) => ContestResultsPage(contestId: contestId),
-                                              ),
-                                            );
-                                          },
-                                          gradientColors: _currentTheme == 'light'
-                                              ? [const Color(0xFF4A90E2), const Color(0xFF50C9C3)]
-                                              : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
-                                          label: 'Результаты',
-                                        )
-                                      : isContestStarted && isParticipant
-                                          ? _buildAnimatedButton(
-                                              onPressed: () => _startContest(contestId, testTypeId, language),
-                                              gradientColors: _currentTheme == 'light'
-                                                  ? [Colors.green, Colors.greenAccent]
-                                                  : [Colors.greenAccent, Colors.green],
-                                              label: 'Начать',
-                                            )
-                                          : isParticipant
-                                              ? Text(
-                                                  'Зарегистрирован',
-                                                  style: TextStyle(
-                                                    color: _currentTheme == 'light' ? Colors.green : Colors.greenAccent,
-                                                  ),
-                                                )
-                                              : _buildAnimatedButton(
-                                                  onPressed: () =>
-                                                      _registerForContest(contestId, isRestricted, contest['password']),
-                                                  gradientColors: _currentTheme == 'light'
-                                                      ? [const Color(0xFFFF6F61), const Color(0xFFFFB74D)]
-                                                      : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
-                                                  label: 'Зарегистрироваться',
-                                                ),
                                 ),
-                              ),
-                            ),
+                              );
+                            },
                           );
                         },
                       );
@@ -486,6 +522,8 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  Map<String, dynamic>? _userResult;
+  int? _userRank;
 
   @override
   void initState() {
@@ -502,6 +540,7 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
     );
     _animationController.forward();
     _loadTheme();
+    _loadUserResult();
   }
 
   Future<void> _loadTheme() async {
@@ -509,6 +548,42 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
     setState(() {
       _currentTheme = prefs.getString('theme') ?? 'light';
     });
+  }
+
+  Future<void> _loadUserResult() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    DocumentSnapshot userResultDoc = await FirebaseFirestore.instance
+        .collection('contest_results')
+        .doc(widget.contestId)
+        .collection('results')
+        .doc(user.uid)
+        .get();
+
+    if (userResultDoc.exists) {
+      setState(() {
+        _userResult = userResultDoc.data() as Map<String, dynamic>;
+      });
+    }
+
+    QuerySnapshot resultsSnapshot = await FirebaseFirestore.instance
+        .collection('contest_results')
+        .doc(widget.contestId)
+        .collection('results')
+        .orderBy('points', descending: true)
+        .get();
+
+    int rank = 1;
+    for (var doc in resultsSnapshot.docs) {
+      if (doc.id == user.uid) {
+        setState(() {
+          _userRank = rank;
+        });
+        break;
+      }
+      rank++;
+    }
   }
 
   @override
@@ -630,6 +705,96 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                         ),
                       ),
                       const SizedBox(height: 20),
+                      if (_userResult != null && _userRank != null) ...[
+                        FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: SlideTransition(
+                            position: _slideAnimation,
+                            child: Card(
+                              color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                                side: BorderSide(
+                                  color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
+                                  width: 1,
+                                ),
+                              ),
+                              elevation: _currentTheme == 'light' ? 5 : 0,
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Ваш результат',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.star,
+                                          color: _currentTheme == 'light' ? Colors.amber : Colors.amberAccent,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Место: $_userRank из ${participants.length}',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.score,
+                                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Баллы: ${_userResult!['points'].toStringAsFixed(1)}',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.check_circle,
+                                          color: _currentTheme == 'light' ? Colors.green : Colors.greenAccent,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Правильных: ${_userResult!['correct_answers']}/${_userResult!['total_questions']}',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
                       Expanded(
                         child: StreamBuilder<QuerySnapshot>(
                           stream: firestore
@@ -671,145 +836,199 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                               );
                             }
 
-                            return ListView.builder(
-                              itemCount: results.length,
-                              itemBuilder: (context, index) {
-                                final result = results[index];
-                                final userId = result.id;
-                                final points = (result['points'] as num).toDouble();
-                                final timeSpent = result['time_spent'] as int;
-                                final correctAnswers = result['correct_answers'] as int;
-                                final totalQuestions = result['total_questions'] as int;
-                                final completedAt = result['completed_at'] != null
-                                    ? DateTime.parse(result['completed_at'])
-                                    : null;
+                            return SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: SingleChildScrollView(
+                                child: DataTable(
+                                  dataRowHeight: 60,
+                                  columns: [
+                                    DataColumn(
+                                      label: Text(
+                                        'Место',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    DataColumn(
+                                      label: Text(
+                                        'Имя',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    DataColumn(
+                                      label: Text(
+                                        'Фамилия',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    DataColumn(
+                                      label: Text(
+                                        'Баллы',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    DataColumn(
+                                      label: Text(
+                                        'Правильные',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    DataColumn(
+                                      label: Text(
+                                        'Время',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    DataColumn(
+                                      label: Text(
+                                        'Дата завершения',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  rows: results.asMap().entries.map((entry) {
+                                    final index = entry.key;
+                                    final result = entry.value;
+                                    final userId = result.id;
+                                    final points = (result['points'] as num).toDouble();
+                                    final timeSpent = result['time_spent'] as int;
+                                    final correctAnswers = result['correct_answers'] as int;
+                                    final totalQuestions = result['total_questions'] as int;
+                                    final completedAt = result['completed_at'] != null
+                                        ? DateTime.parse(result['completed_at'])
+                                        : null;
 
-                                return FutureBuilder<DocumentSnapshot>(
-                                  future: firestore.collection('users').doc(userId).get(),
-                                  builder: (context, userSnapshot) {
-                                    if (userSnapshot.connectionState == ConnectionState.waiting) {
-                                      return const ListTile(title: Text('Загрузка...'));
-                                    }
-                                    if (userSnapshot.hasError) {
-                                      return const ListTile(title: Text('Ошибка загрузки пользователя'));
-                                    }
-                                    final userData = userSnapshot.data!;
-                                    final firstName = userData['first_name'] as String? ?? 'Неизвестно';
-                                    final lastName = userData['last_name'] as String? ?? '';
-
-                                    return FadeTransition(
-                                      opacity: _fadeAnimation,
-                                      child: SlideTransition(
-                                        position: _slideAnimation,
-                                        child: Card(
-                                          color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(15),
-                                            side: BorderSide(
-                                              color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
-                                              width: 1,
-                                            ),
-                                          ),
-                                          elevation: _currentTheme == 'light' ? 5 : 0,
-                                          margin: const EdgeInsets.symmetric(vertical: 4.0),
-                                          child: ListTile(
-                                            leading: CircleAvatar(
-                                              child: Text(
-                                                '${index + 1}',
-                                                style: const TextStyle(color: Colors.white),
-                                              ),
-                                              backgroundColor: index == 0
+                                    return DataRow(
+                                      cells: [
+                                        DataCell(
+                                          Text(
+                                            '${index + 1}',
+                                            style: TextStyle(
+                                              color: index == 0
                                                   ? Colors.amber
                                                   : index == 1
                                                       ? Colors.grey
                                                       : index == 2
                                                           ? Colors.brown
-                                                          : Colors.blue,
-                                            ),
-                                            title: Text(
-                                              '$firstName $lastName',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                                              ),
-                                            ),
-                                            subtitle: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.star,
-                                                      color: _currentTheme == 'light' ? Colors.amber : Colors.amberAccent,
-                                                      size: 16,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      'Баллы: ${points.toStringAsFixed(1)}',
-                                                      style: TextStyle(
-                                                        color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.check_circle,
-                                                      color: _currentTheme == 'light' ? Colors.green : Colors.greenAccent,
-                                                      size: 16,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      'Правильных: $correctAnswers/$totalQuestions',
-                                                      style: TextStyle(
-                                                        color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.timer,
-                                                      color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                                      size: 16,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      'Время: ${timeSpent ~/ 60} мин ${timeSpent % 60} сек',
-                                                      style: TextStyle(
-                                                        color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                if (completedAt != null)
-                                                  Row(
-                                                    children: [
-                                                      Icon(
-                                                        Icons.calendar_today,
-                                                        color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                                        size: 16,
-                                                      ),
-                                                      const SizedBox(width: 4),
-                                                      Text(
-                                                        'Завершено: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(completedAt)}',
-                                                        style: TextStyle(
-                                                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                              ],
+                                                          : (_currentTheme == 'light'
+                                                              ? const Color(0xFF2E2E2E)
+                                                              : Colors.white),
                                             ),
                                           ),
                                         ),
-                                      ),
+                                        DataCell(
+                                          FutureBuilder<DocumentSnapshot>(
+                                            future: firestore.collection('users').doc(userId).get(),
+                                            builder: (context, userSnapshot) {
+                                              if (userSnapshot.connectionState == ConnectionState.waiting) {
+                                                return const Text('Загрузка...');
+                                              }
+                                              if (userSnapshot.hasError) {
+                                                return const Text('Ошибка');
+                                              }
+                                              final userData = userSnapshot.data!;
+                                              final firstName = userData['first_name'] as String? ?? 'Неизвестно';
+                                              return Text(
+                                                firstName,
+                                                style: TextStyle(
+                                                  color: _currentTheme == 'light'
+                                                      ? const Color(0xFF2E2E2E)
+                                                      : Colors.white,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                        DataCell(
+                                          FutureBuilder<DocumentSnapshot>(
+                                            future: firestore.collection('users').doc(userId).get(),
+                                            builder: (context, userSnapshot) {
+                                              if (userSnapshot.connectionState == ConnectionState.waiting) {
+                                                return const Text('Загрузка...');
+                                              }
+                                              if (userSnapshot.hasError) {
+                                                return const Text('Ошибка');
+                                              }
+                                              final userData = userSnapshot.data!;
+                                              final lastName = userData['last_name'] as String? ?? '';
+                                              return Text(
+                                                lastName,
+                                                style: TextStyle(
+                                                  color: _currentTheme == 'light'
+                                                      ? const Color(0xFF2E2E2E)
+                                                      : Colors.white,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            points.toStringAsFixed(1),
+                                            style: TextStyle(
+                                              color: _currentTheme == 'light'
+                                                  ? const Color(0xFF2E2E2E)
+                                                  : Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            '$correctAnswers/$totalQuestions',
+                                            style: TextStyle(
+                                              color: _currentTheme == 'light'
+                                                  ? const Color(0xFF2E2E2E)
+                                                  : Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            '${timeSpent ~/ 60} мин ${timeSpent % 60} сек',
+                                            style: TextStyle(
+                                              color: _currentTheme == 'light'
+                                                  ? const Color(0xFF2E2E2E)
+                                                  : Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            completedAt != null
+                                                ? DateFormat('d MMMM yyyy, HH:mm', 'ru').format(completedAt)
+                                                : 'Не завершено',
+                                            style: TextStyle(
+                                              color: _currentTheme == 'light'
+                                                  ? const Color(0xFF2E2E2E)
+                                                  : Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     );
-                                  },
-                                );
-                              },
+                                  }).toList(),
+                                ),
+                              ),
                             );
                           },
                         ),

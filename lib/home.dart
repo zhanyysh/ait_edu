@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Добавляем импорт
+import 'package:shared_preferences/shared_preferences.dart';
 import 'settings.dart';
 import 'contests.dart';
 import 'training.dart';
@@ -138,6 +138,7 @@ class TestSelectionPageState extends State<TestSelectionPage> with SingleTickerP
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -153,9 +154,19 @@ class TestSelectionPageState extends State<TestSelectionPage> with SingleTickerP
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
     _animationController.forward();
-    _loadTestTypes();
-    _loadSelectedTests();
     _loadTheme();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+    });
+    await _loadTestTypes();
+    await _loadSelectedTests();
+    setState(() {
+      _isLoading = false;
+    });
   }
 
   Future<void> _loadTheme() async {
@@ -206,7 +217,11 @@ class TestSelectionPageState extends State<TestSelectionPage> with SingleTickerP
           List<dynamic> selectedTests = data['selected_tests'] as List<dynamic>;
           if (mounted) {
             setState(() {
-              _selectedTestTypeIds = selectedTests.map((test) => test['test_type_id'] as String).toList();
+              _selectedTestTypeIds = selectedTests
+                  .map((test) => test['test_type_id'] as String)
+                  .where((testTypeId) =>
+                      _testTypes.any((testType) => testType['id'] == testTypeId))
+                  .toList();
               _selectedLanguages = {
                 for (var test in selectedTests)
                   test['test_type_id'] as String: test['language'] as String?
@@ -346,203 +361,208 @@ class TestSelectionPageState extends State<TestSelectionPage> with SingleTickerP
             opacity: _fadeAnimation,
             child: SlideTransition(
               position: _slideAnimation,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Прохождение тестов',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  DropdownButtonFormField<String>(
-                    value: _selectedTestTypeId,
-                    hint: const Text('Выберите вид теста'),
-                    items: _testTypes.map((testType) {
-                      return DropdownMenuItem<String>(
-                        value: testType['id'],
-                        child: Text(testType['name']!),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedTestTypeId = value;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      prefixIcon: Icon(Icons.quiz, color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
-                      filled: true,
-                      fillColor: _currentTheme == 'light' ? Colors.grey[100] : Colors.white.withOpacity(0.08),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        borderSide: const BorderSide(color: Colors.transparent),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        borderSide: BorderSide(
-                          color: _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFF8E2DE2),
-                          width: 2,
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Прохождение тестов',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                            letterSpacing: 1.2,
+                          ),
                         ),
-                      ),
-                    ),
-                    style: TextStyle(color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white),
-                    dropdownColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
-                  ),
-                  const SizedBox(height: 16),
-                  Center(
-                    child: _buildAnimatedButton(
-                      onPressed: _addTestType,
-                      gradientColors: _currentTheme == 'light'
-                          ? [const Color(0xFFFF6F61), const Color(0xFFFFB74D)]
-                          : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
-                      label: 'Добавить тест',
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  if (_selectedTestTypeIds.isNotEmpty) ...[
-                    Text(
-                      'Выбранные тесты:',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Column(
-                      children: _selectedTestTypeIds.map((testTypeId) {
-                        final testTypeName = _testTypes
-                            .firstWhere((testType) => testType['id'] == testTypeId)['name']!;
-                        final languages = _availableLanguages[testTypeId] ?? [];
-                        final selectedLanguage = _selectedLanguages[testTypeId];
-
-                        return Card(
-                          color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            side: BorderSide(
-                              color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
-                              width: 1,
+                        const SizedBox(height: 20),
+                        DropdownButtonFormField<String>(
+                          value: _selectedTestTypeId,
+                          hint: const Text('Выберите вид теста'),
+                          items: _testTypes.map((testType) {
+                            return DropdownMenuItem<String>(
+                              value: testType['id'],
+                              child: Text(testType['name']!),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedTestTypeId = value;
+                            });
+                          },
+                          decoration: InputDecoration(
+                            prefixIcon: Icon(Icons.quiz, color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
+                            filled: true,
+                            fillColor: _currentTheme == 'light' ? Colors.grey[100] : Colors.white.withOpacity(0.08),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: const BorderSide(color: Colors.transparent),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: BorderSide(
+                                color: _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFF8E2DE2),
+                                width: 2,
+                              ),
                             ),
                           ),
-                          elevation: _currentTheme == 'light' ? 8 : 0,
-                          margin: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                          style: TextStyle(color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white),
+                          dropdownColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
+                        ),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: _buildAnimatedButton(
+                            onPressed: _addTestType,
+                            gradientColors: _currentTheme == 'light'
+                                ? [const Color(0xFFFF6F61), const Color(0xFFFFB74D)]
+                                : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
+                            label: 'Добавить тест',
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        if (_selectedTestTypeIds.isNotEmpty) ...[
+                          Text(
+                            'Выбранные тесты:',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Column(
+                            children: _selectedTestTypeIds.map((testTypeId) {
+                              final testType = _testTypes.firstWhere(
+                                (testType) => testType['id'] == testTypeId,
+                                orElse: () => {'id': testTypeId, 'name': 'Неизвестный тест'},
+                              );
+                              final testTypeName = testType['name']!;
+                              final languages = _availableLanguages[testTypeId] ?? [];
+                              final selectedLanguage = _selectedLanguages[testTypeId];
+
+                              return Card(
+                                color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                  side: BorderSide(
+                                    color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
+                                    width: 1,
+                                  ),
+                                ),
+                                elevation: _currentTheme == 'light' ? 8 : 0,
+                                margin: const EdgeInsets.symmetric(vertical: 8.0),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    children: [
+                                      Row(
                                         children: [
-                                          Text(
-                                            testTypeName,
-                                            style: TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
-                                              color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 12),
-                                          if (languages.isNotEmpty)
-                                            DropdownButtonFormField<String>(
-                                              value: selectedLanguage,
-                                              hint: const Text('Выберите язык'),
-                                              items: languages.map((lang) {
-                                                return DropdownMenuItem<String>(
-                                                  value: lang['code'],
-                                                  child: Text(lang['name']!),
-                                                );
-                                              }).toList(),
-                                              onChanged: (value) {
-                                                setState(() {
-                                                  _selectedLanguages[testTypeId] = value;
-                                                });
-                                                _saveSelectedTests();
-                                              },
-                                              decoration: InputDecoration(
-                                                prefixIcon: Icon(Icons.language,
-                                                    color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
-                                                filled: true,
-                                                fillColor: _currentTheme == 'light'
-                                                    ? Colors.grey[100]
-                                                    : Colors.white.withOpacity(0.08),
-                                                border: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(15),
-                                                  borderSide: BorderSide.none,
-                                                ),
-                                                enabledBorder: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(15),
-                                                  borderSide: const BorderSide(color: Colors.transparent),
-                                                ),
-                                                focusedBorder: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(15),
-                                                  borderSide: BorderSide(
-                                                    color: _currentTheme == 'light'
-                                                        ? const Color(0xFFFF6F61)
-                                                        : const Color(0xFF8E2DE2),
-                                                    width: 2,
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  testTypeName,
+                                                  style: TextStyle(
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
                                                   ),
                                                 ),
-                                              ),
-                                              style: TextStyle(
-                                                  color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white),
-                                              dropdownColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
-                                            )
-                                          else
-                                            Text(
-                                              'Языки загружаются...',
-                                              style: TextStyle(
-                                                  color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
+                                                const SizedBox(height: 12),
+                                                if (languages.isNotEmpty)
+                                                  DropdownButtonFormField<String>(
+                                                    value: selectedLanguage,
+                                                    hint: const Text('Выберите язык'),
+                                                    items: languages.map((lang) {
+                                                      return DropdownMenuItem<String>(
+                                                        value: lang['code'],
+                                                        child: Text(lang['name']!),
+                                                      );
+                                                    }).toList(),
+                                                    onChanged: (value) {
+                                                      setState(() {
+                                                        _selectedLanguages[testTypeId] = value;
+                                                      });
+                                                      _saveSelectedTests();
+                                                    },
+                                                    decoration: InputDecoration(
+                                                      prefixIcon: Icon(Icons.language,
+                                                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
+                                                      filled: true,
+                                                      fillColor: _currentTheme == 'light'
+                                                          ? Colors.grey[100]
+                                                          : Colors.white.withOpacity(0.08),
+                                                      border: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(15),
+                                                        borderSide: BorderSide.none,
+                                                      ),
+                                                      enabledBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(15),
+                                                        borderSide: const BorderSide(color: Colors.transparent),
+                                                      ),
+                                                      focusedBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(15),
+                                                        borderSide: BorderSide(
+                                                          color: _currentTheme == 'light'
+                                                              ? const Color(0xFFFF6F61)
+                                                              : const Color(0xFF8E2DE2),
+                                                          width: 2,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    style: TextStyle(
+                                                        color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white),
+                                                    dropdownColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
+                                                  )
+                                                else
+                                                  Text(
+                                                    'Языки загружаются...',
+                                                    style: TextStyle(
+                                                        color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
+                                                  ),
+                                              ],
                                             ),
+                                          ),
+                                          IconButton(
+                                            icon: Icon(Icons.close,
+                                                color: _currentTheme == 'light' ? Colors.grey : Colors.white70, size: 20),
+                                            onPressed: () {
+                                              setState(() {
+                                                _selectedTestTypeIds.remove(testTypeId);
+                                                _selectedLanguages.remove(testTypeId);
+                                                _availableLanguages.remove(testTypeId);
+                                              });
+                                              _saveSelectedTests();
+                                              _animationController.reset();
+                                              _animationController.forward();
+                                            },
+                                          ),
                                         ],
                                       ),
-                                    ),
-                                    IconButton(
-                                      icon: Icon(Icons.close,
-                                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70, size: 20),
-                                      onPressed: () {
-                                        setState(() {
-                                          _selectedTestTypeIds.remove(testTypeId);
-                                          _selectedLanguages.remove(testTypeId);
-                                          _availableLanguages.remove(testTypeId);
-                                        });
-                                        _saveSelectedTests();
-                                        _animationController.reset();
-                                        _animationController.forward();
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                if (selectedLanguage != null) ...[
-                                  const SizedBox(height: 12),
-                                  _buildAnimatedButton(
-                                    onPressed: () => _startTest(testTypeId, selectedLanguage),
-                                    gradientColors: _currentTheme == 'light'
-                                        ? [const Color(0xFF4A90E2), const Color(0xFF50C9C3)]
-                                        : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
-                                    label: 'Начать тест',
+                                      if (selectedLanguage != null) ...[
+                                        const SizedBox(height: 12),
+                                        _buildAnimatedButton(
+                                          onPressed: () => _startTest(testTypeId, selectedLanguage),
+                                          gradientColors: _currentTheme == 'light'
+                                              ? [const Color(0xFF4A90E2), const Color(0xFF50C9C3)]
+                                              : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
+                                          label: 'Начать тест',
+                                        ),
+                                      ],
+                                    ],
                                   ),
-                                ],
-                              ],
-                            ),
+                                ),
+                              );
+                            }).toList(),
                           ),
-                        );
-                      }).toList(),
+                        ],
+                      ],
                     ),
-                  ],
-                ],
-              ),
             ),
           ),
         ),
@@ -619,28 +639,29 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
   List<DocumentSnapshot> _categories = [];
   int _currentCategoryIndex = 0;
   List<DocumentSnapshot> _questions = [];
-  List<int?> _selectedAnswers = [];
+  Map<String, Map<String, dynamic>> _readingTexts = {};
+  List<dynamic> _selectedAnswers = [];
   int _correctAnswers = 0;
   double _duration = 0;
   int _timeRemaining = 0;
   bool _isLoading = true;
   bool _entireTestFinished = false;
   Timer? _timer;
+  String _testType = 'multiple-choice';
 
   final List<DocumentSnapshot> _allQuestions = [];
-  final List<int?> _allSelectedAnswers = [];
+  final List<dynamic> _allSelectedAnswers = [];
   final List<String> _allCorrectAnswers = [];
   final List<String> _categoryNames = [];
   final List<int> _questionsPerCategory = [];
   final List<double> _pointsPerQuestionByCategory = [];
+  final List<String> _testTypesByCategory = [];
   double _totalPoints = 0;
   String? _testId;
   String _currentTheme = 'light';
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
-  
-  get pesticulate => null;
 
   @override
   void initState() {
@@ -721,31 +742,40 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
       _isLoading = true;
       _questions = [];
       _selectedAnswers = [];
+      _readingTexts = {};
     });
 
     try {
       DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
       String categoryId = categoryDoc.id;
-      _duration = (categoryDoc['duration'] as num).toDouble();
-      int numberOfQuestions = (categoryDoc['number_of_questions'] as int? ?? 30);
+      _testType = categoryDoc['test_type'] as String? ?? 'multiple-choice';
+      _duration = (categoryDoc['duration'] as num?)?.toDouble() ?? 0.0;
+      int numberOfQuestions = (categoryDoc['number_of_questions'] as int?) ?? 30;
       _timeRemaining = (_duration * 60).toInt();
 
-      debugPrint('TestPage: Загрузка вопросов для testTypeId=${widget.testTypeId}, categoryId=$categoryId, language=${widget.language}');
+      debugPrint('TestPage: Загрузка вопросов для testTypeId=${widget.testTypeId}, categoryId=$categoryId, language=${widget.language}, testType=$_testType');
       debugPrint('TestPage: Количество вопросов для категории: $numberOfQuestions');
 
-      List<String> usedQuestionIds = [];
-      final user = _auth.currentUser;
-      if (user != null) {
-        QuerySnapshot usedQuestions = await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('used_questions')
-            .where('test_type_id', isEqualTo: widget.testTypeId)
-            .where('category_id', isEqualTo: categoryId)
+      if (_testType == 'reading') {
+        QuerySnapshot textsSnapshot = await _firestore
+            .collection('test_types')
+            .doc(widget.testTypeId)
+            .collection('categories')
+            .doc(categoryId)
+            .collection('texts')
             .where('language', isEqualTo: widget.language)
             .get();
-        usedQuestionIds = usedQuestions.docs.map((doc) => doc['question_id'] as String).toList();
-        debugPrint('TestPage: Использованные вопросы: $usedQuestionIds');
+
+        _readingTexts = {
+          for (var doc in textsSnapshot.docs)
+            doc.id: {
+              'id': doc.id,
+              'title': doc['title'] as String?,
+              'content': doc['content'] as String? ?? 'Текст отсутствует',
+            }
+        };
+
+        debugPrint('TestPage: Загружено текстов для reading: ${_readingTexts.length}');
       }
 
       QuerySnapshot questionsSnapshot = await _firestore
@@ -760,11 +790,15 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
       debugPrint('TestPage: Всего вопросов в базе: ${questionsSnapshot.docs.length}');
 
       List<DocumentSnapshot> questions = questionsSnapshot.docs
-          .where((doc) => !usedQuestionIds.contains(doc.id))
-          .where((doc) => doc['options'] != null && (doc['options'] as List).isNotEmpty)
+          .where((doc) {
+            if (_testType == 'multiple-choice' || _testType == 'reading') {
+              return doc['options'] != null && (doc['options'] as List).isNotEmpty;
+            }
+            return true;
+          })
           .toList();
 
-      debugPrint('TestPage: Доступных вопросов после исключения использованных: ${questions.length}');
+      debugPrint('TestPage: Доступных вопросов: ${questions.length}');
 
       if (questions.isEmpty) {
         setState(() {
@@ -781,27 +815,18 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
         return;
       }
 
+      // Рандомизация вопросов
       questions.shuffle(Random());
-      _questions = questions.length > numberOfQuestions ? questions.sublist(0, numberOfQuestions) : questions;
+      _questions = questions.length > numberOfQuestions
+          ? questions.sublist(0, numberOfQuestions)
+          : questions;
 
       debugPrint('TestPage: Итоговое количество вопросов для теста: ${_questions.length}');
 
-      _selectedAnswers = List<int?>.filled(_questions.length, null);
-
-      if (user != null) {
-        for (var question in _questions) {
-          await _firestore
-              .collection('users')
-              .doc(user.uid)
-              .collection('used_questions')
-              .add({
-            'test_type_id': widget.testTypeId,
-            'category_id': categoryId,
-            'language': widget.language,
-            'question_id': question.id,
-          });
-        }
-      }
+      _selectedAnswers = List<dynamic>.filled(
+        _questions.length,
+        _testType == 'writing' ? '' : null,
+      );
 
       setState(() {
         _isLoading = false;
@@ -838,15 +863,15 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
     });
   }
 
-  void _selectAnswer(int questionIndex, int answerIndex) {
+  void _selectAnswer(int questionIndex, dynamic answer) {
     setState(() {
-      _selectedAnswers[questionIndex] = answerIndex;
+      _selectedAnswers[questionIndex] = answer;
     });
   }
 
   Future<void> _finishCategory() async {
     _timer?.cancel();
-    if (_selectedAnswers.contains(null)) {
+    if (_selectedAnswers.contains(null) || (_testType == 'writing' && _selectedAnswers.any((answer) => (answer as String).isEmpty))) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Ответьте на все вопросы перед продолжением')),
@@ -856,26 +881,31 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
     }
 
     DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
-    String categoryName = categoryDoc['name'] as String;
-    double pointsPerQuestion = (categoryDoc['points_per_question'] as num).toDouble();
+    String categoryName = categoryDoc['name'] as String? ?? 'Неизвестная категория';
+    double pointsPerQuestion = (categoryDoc['points_per_question'] as num?)?.toDouble() ?? 0.0;
 
     _categoryNames.add(categoryName);
     _pointsPerQuestionByCategory.add(pointsPerQuestion);
     _questionsPerCategory.add(_questions.length);
+    _testTypesByCategory.add(_testType);
 
     int categoryCorrectAnswers = 0;
     for (int i = 0; i < _questions.length; i++) {
       DocumentSnapshot question = _questions[i];
-      String correctAnswer = question['correct_answer'] as String;
+      String? correctAnswer = question['correct_answer'] as String?;
+      String? readingTextId = question['reading_text_id'] as String?;
+      dynamic userAnswer = _selectedAnswers[i];
       _allQuestions.add(question);
-      _allCorrectAnswers.add(correctAnswer);
-      int? userAnswerIndex = _selectedAnswers[i];
-      _allSelectedAnswers.add(userAnswerIndex);
-      final options = (question['options'] as List).map((option) => option.toString()).toList();
-      String? userAnswer = userAnswerIndex != null ? options[userAnswerIndex] : null;
-      if (userAnswer == correctAnswer) {
-        _correctAnswers++;
-        categoryCorrectAnswers++;
+      _allCorrectAnswers.add(correctAnswer ?? '');
+      _allSelectedAnswers.add(userAnswer);
+
+      if (_testType == 'multiple-choice' || _testType == 'reading') {
+        final options = (question['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+        String? userAnswerText = userAnswer != null && options.isNotEmpty ? options[userAnswer as int] : null;
+        if (userAnswerText == correctAnswer) {
+          _correctAnswers++;
+          categoryCorrectAnswers++;
+        }
       }
     }
 
@@ -915,7 +945,15 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
 
     try {
       DocumentSnapshot testTypeDoc = await _firestore.collection('test_types').doc(widget.testTypeId).get();
-      String testTypeName = testTypeDoc['name'] as String;
+      String testTypeName = testTypeDoc.exists ? (testTypeDoc['name'] as String? ?? 'Неизвестный тест') : 'Неизвестный тест';
+
+      String? contestName;
+      if (widget.contestId != null) {
+        DocumentSnapshot contestDoc = await _firestore.collection('contests').doc(widget.contestId).get();
+        if (contestDoc.exists) {
+          contestName = 'Контест: $testTypeName (${contestDoc['language'] ?? 'Не указан'})';
+        }
+      }
 
       await _firestore
           .collection('users')
@@ -925,26 +963,52 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
           .set({
         'test_type': testTypeName,
         'date': DateTime.now().toIso8601String(),
+        'is_contest': widget.contestId != null,
+        'contest_id': widget.contestId,
+        'contest_name': contestName ?? testTypeName,
       });
 
       for (int categoryIndex = 0; categoryIndex < _categoryNames.length; categoryIndex++) {
         String categoryName = _categoryNames[categoryIndex];
+        String categoryTestType = _testTypesByCategory[categoryIndex];
         double pointsPerQuestion = _pointsPerQuestionByCategory[categoryIndex];
         int startIndex = categoryIndex == 0
             ? 0
-            : _questionsPerCategory
-                .sublist(0, categoryIndex)
-                .fold(0, (sum, count) => sum + count);
+            : _questionsPerCategory.sublist(0, categoryIndex).fold(0, (sum, count) => sum + count);
         int endIndex = startIndex + _questionsPerCategory[categoryIndex];
 
         int categoryCorrectAnswers = 0;
+        List<Map<String, dynamic>> answers = [];
         for (int i = startIndex; i < endIndex; i++) {
-          String correctAnswer = _allCorrectAnswers[i];
-          int? userAnswerIndex = _allSelectedAnswers[i];
-          final options = (_allQuestions[i]['options'] as List).map((option) => option.toString()).toList();
-          String? userAnswer = userAnswerIndex != null ? options[userAnswerIndex] : null;
-          if (userAnswer == correctAnswer) {
-            categoryCorrectAnswers++;
+          DocumentSnapshot question = _allQuestions[i];
+          String? correctAnswer = _allCorrectAnswers[i];
+          dynamic userAnswer = _allSelectedAnswers[i];
+          String? readingTextId = question['reading_text_id'] as String?;
+          String? answerText = (question.data() as Map<String, dynamic>?)?.containsKey('answer_text') == true
+              ? question['answer_text'] as String?
+              : null;
+
+          if (categoryTestType == 'multiple-choice' || categoryTestType == 'reading') {
+            final options = (question['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+            String? userAnswerText = userAnswer != null && options.isNotEmpty ? options[userAnswer as int] : null;
+            if (userAnswerText == correctAnswer) {
+              categoryCorrectAnswers++;
+            }
+            answers.add({
+              'question_id': question.id,
+              'user_answer': userAnswerText,
+              'correct_answer': correctAnswer,
+              'reading_text_id': readingTextId,
+              'is_correct': userAnswerText == correctAnswer,
+            });
+          } else if (categoryTestType == 'writing') {
+            answers.add({
+              'question_id': question.id,
+              'user_answer': userAnswer as String? ?? '',
+              'correct_answer': answerText,
+              'reading_text_id': null,
+              'is_correct': null,
+            });
           }
         }
 
@@ -960,11 +1024,13 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
             .collection('categories')
             .add({
           'category': categoryName,
+          'test_type': categoryTestType,
           'correct_answers': categoryCorrectAnswers,
           'total_questions': _questionsPerCategory[categoryIndex],
           'points': categoryPoints,
           'time_spent': categoryTimeSpent,
           'total_time': categoryTotalTime,
+          'answers': answers,
         });
 
         if (widget.contestId != null) {
@@ -979,6 +1045,8 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
             'points': categoryPoints,
             'time_spent': categoryTimeSpent,
             'completed_at': DateTime.now().toIso8601String(),
+            'test_type': categoryTestType,
+            'answers': answers,
           }, SetOptions(merge: true));
         }
       }
@@ -1122,6 +1190,7 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                       ..._categoryNames.asMap().entries.map((categoryEntry) {
                         int categoryIndex = categoryEntry.key;
                         String categoryName = categoryEntry.value;
+                        String categoryTestType = _testTypesByCategory[categoryIndex];
                         double pointsPerQuestion = _pointsPerQuestionByCategory[categoryIndex];
 
                         int startIndex = categoryIndex == 0
@@ -1134,11 +1203,13 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                         int categoryCorrectAnswers = 0;
                         for (int i = startIndex; i < endIndex; i++) {
                           String correctAnswer = _allCorrectAnswers[i];
-                          int? userAnswerIndex = _allSelectedAnswers[i];
-                          final options = (_allQuestions[i]['options'] as List).map((option) => option.toString()).toList();
-                          String? userAnswer = userAnswerIndex != null ? options[userAnswerIndex] : null;
-                          if (userAnswer == correctAnswer) {
-                            categoryCorrectAnswers++;
+                          dynamic userAnswer = _allSelectedAnswers[i];
+                          if (categoryTestType == 'multiple-choice' || categoryTestType == 'reading') {
+                            final options = (_allQuestions[i]['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+                            String? userAnswerText = userAnswer != null && options.isNotEmpty ? options[userAnswer as int] : null;
+                            if (userAnswerText == correctAnswer) {
+                              categoryCorrectAnswers++;
+                            }
                           }
                         }
 
@@ -1183,13 +1254,29 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                             ..._allQuestions.asMap().entries.where((entry) => entry.key >= startIndex && entry.key < endIndex).map((entry) {
                               int index = entry.key;
                               DocumentSnapshot question = entry.value;
-                              final options = (question['options'] as List).map((option) => option.toString()).toList();
-                              String correctAnswer = _allCorrectAnswers[index];
-                              int? userAnswerIndex = _allSelectedAnswers[index];
-                              String? userAnswer = userAnswerIndex != null ? options[userAnswerIndex] : null;
-                              String explanation = question['explanation'] as String? ?? pesticulate; 'Объяснение отсутствует';
+                              String questionText = question['text'] as String? ?? 'Вопрос отсутствует';
+                              String? correctAnswer = _allCorrectAnswers[index];
+                              dynamic userAnswer = _allSelectedAnswers[index];
+                              String? readingTextId = question['reading_text_id'] as String?;
+                              String? explanation = question['explanation'] as String? ?? 'Объяснение отсутствует';
+                              bool isCorrect = false;
 
-                              bool isCorrect = userAnswer == correctAnswer;
+                              String? userAnswerText;
+                              if (categoryTestType == 'multiple-choice' || categoryTestType == 'reading') {
+                                final options = (question['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+                                userAnswerText = userAnswer != null && options.isNotEmpty ? options[userAnswer as int] : null;
+                                isCorrect = userAnswerText == correctAnswer;
+                              } else if (categoryTestType == 'writing') {
+                                userAnswerText = userAnswer as String? ?? 'Не введено';
+                              }
+
+                              String? readingTextContent;
+                              String? readingTextTitle;
+                              if (readingTextId != null) {
+                                final text = _readingTexts[readingTextId] ?? {'title': null, 'content': 'Текст не найден'};
+                                readingTextTitle = text['title'] as String?;
+                                readingTextContent = text['content'] as String? ?? 'Текст отсутствует';
+                              }
 
                               return Card(
                                 color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
@@ -1207,8 +1294,27 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      if (readingTextId != null) ...[
+                                        Text(
+                                          readingTextTitle ?? 'Текст',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          readingTextContent!,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: _currentTheme == 'light' ? Colors.grey[800] : Colors.white70,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                      ],
                                       Text(
-                                        'Вопрос ${index - startIndex + 1}: ${question['text']}',
+                                        'Вопрос ${index - startIndex + 1}: $questionText',
                                         style: TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.bold,
@@ -1217,17 +1323,23 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                       ),
                                       const SizedBox(height: 8),
                                       Text(
-                                        'Ваш ответ: ${userAnswer ?? 'Не выбран'}',
+                                        'Ваш ответ: ${userAnswerText ?? 'Не выбран'}',
                                         style: TextStyle(
-                                          color: isCorrect ? Colors.green : Colors.red,
+                                          color: categoryTestType == 'writing'
+                                              ? (_currentTheme == 'light' ? Colors.grey : Colors.white70)
+                                              : isCorrect
+                                                  ? Colors.green
+                                                  : Colors.red,
                                           fontSize: 14,
                                         ),
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Правильный ответ: $correctAnswer',
-                                        style: const TextStyle(fontSize: 14, color: Colors.green),
-                                      ),
+                                      if (categoryTestType != 'writing') ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Правильный ответ: ${correctAnswer ?? 'Не указан'}',
+                                          style: const TextStyle(fontSize: 14, color: Colors.green),
+                                        ),
+                                      ],
                                       const SizedBox(height: 8),
                                       Text(
                                         'Объяснение: $explanation',
@@ -1287,7 +1399,7 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          'Категория: ${category['name']}',
+                                          'Категория: ${category['name']} (${_testType.toUpperCase()})',
                                           style: TextStyle(
                                             fontSize: 20,
                                             fontWeight: FontWeight.bold,
@@ -1329,81 +1441,260 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                 ),
                               ),
                               const SizedBox(height: 20),
-                              ..._questions.asMap().entries.map((entry) {
-                                int questionIndex = entry.key;
-                                DocumentSnapshot question = entry.value;
+                              if (_testType == 'reading' && _readingTexts.isNotEmpty)
+                                ..._readingTexts.entries.map((entry) {
+                                  String textId = entry.key;
+                                  Map<String, dynamic> text = entry.value;
+                                  String? textTitle = text['title'] as String?;
+                                  String textContent = text['content'] as String;
+                                  List<DocumentSnapshot> textQuestions = _questions
+                                      .where((q) => q['reading_text_id'] == textId)
+                                      .toList();
 
-                                final rawOptions = question['options'];
-                                final options = rawOptions != null && rawOptions is List
-                                    ? rawOptions.map((option) => option.toString()).toList()
-                                    : <String>[];
-
-                                if (options.isEmpty) {
-                                  return Center(
-                                    child: Text(
-                                      'Ошибка: Вопрос не содержит вариантов ответа. Обратитесь к администратору.',
-                                      style: TextStyle(
-                                        color: _currentTheme == 'light' ? Colors.red : Colors.redAccent,
-                                        fontSize: 14,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  );
-                                }
-
-                                return Card(
-                                  color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(15),
-                                    side: BorderSide(
-                                      color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
-                                      width: 1,
-                                    ),
-                                  ),
-                                  elevation: _currentTheme == 'light' ? 5 : 0,
-                                  margin: const EdgeInsets.symmetric(vertical: 8.0),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16.0),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Вопрос ${questionIndex + 1}: ${question['text']}',
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      ExpansionTile(
+                                        title: Text(
+                                          textTitle ?? 'Текст для чтения',
                                           style: TextStyle(
-                                            fontSize: 16,
+                                            fontSize: 18,
                                             fontWeight: FontWeight.bold,
                                             color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
                                           ),
                                         ),
-                                        const SizedBox(height: 12),
-                                        ...options.asMap().entries.map((optionEntry) {
-                                          int optionIndex = optionEntry.key;
-                                          String option = optionEntry.value;
-                                          return Padding(
-                                            padding: const EdgeInsets.symmetric(vertical: 4.0),
-                                            child: RadioListTile<int>(
-                                              title: Text(
-                                                option,
-                                                style: TextStyle(
-                                                  fontSize: 16,
-                                                  color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                                                ),
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.all(16.0),
+                                            child: Text(
+                                              textContent,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: _currentTheme == 'light' ? Colors.grey[800] : Colors.white70,
                                               ),
-                                              value: optionIndex,
-                                              groupValue: _selectedAnswers[questionIndex],
-                                              onChanged: (value) => _selectAnswer(questionIndex, value!),
-                                              contentPadding: EdgeInsets.zero,
-                                              activeColor: _currentTheme == 'light'
-                                                  ? const Color(0xFFFF6F61)
-                                                  : const Color(0xFF8E2DE2),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      ...textQuestions.asMap().entries.map((entry) {
+                                        int questionIndex = _questions.indexOf(entry.value);
+                                        DocumentSnapshot question = entry.value;
+                                        String questionText = question['text'] as String? ?? 'Вопрос отсутствует';
+                                        final options = (question['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+
+                                        if (options.isEmpty) {
+                                          return Center(
+                                            child: Text(
+                                              'Ошибка: Вопрос не содержит вариантов ответа. Обратитесь к администратору.',
+                                              style: TextStyle(
+                                                color: _currentTheme == 'light' ? Colors.red : Colors.redAccent,
+                                                fontSize: 14,
+                                              ),
+                                              textAlign: TextAlign.center,
                                             ),
                                           );
-                                        }).toList(),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
+                                        }
+
+                                        return Card(
+                                          color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(15),
+                                            side: BorderSide(
+                                              color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
+                                              width: 1,
+                                            ),
+                                          ),
+                                          elevation: _currentTheme == 'light' ? 5 : 0,
+                                          margin: const EdgeInsets.symmetric(vertical: 8.0),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(16.0),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Вопрос ${questionIndex + 1}: $questionText',
+                                                  style: TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                ...options.asMap().entries.map((optionEntry) {
+                                                  int optionIndex = optionEntry.key;
+                                                  String option = optionEntry.value;
+                                                  return Padding(
+                                                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                                    child: RadioListTile<int>(
+                                                      title: Text(
+                                                        option,
+                                                        style: TextStyle(
+                                                          fontSize: 16,
+                                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                                        ),
+                                                      ),
+                                                      value: optionIndex,
+                                                      groupValue: _selectedAnswers[questionIndex] as int?,
+                                                      onChanged: (value) => _selectAnswer(questionIndex, value!),
+                                                      contentPadding: EdgeInsets.zero,
+                                                      activeColor: _currentTheme == 'light'
+                                                          ? const Color(0xFFFF6F61)
+                                                          : const Color(0xFF8E2DE2),
+                                                    ),
+                                                  );
+                                                }).toList(),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ],
+                                  );
+                                }).toList(),
+                              if (_testType == 'multiple-choice' || _testType == 'writing')
+                                ..._questions.asMap().entries.map((entry) {
+                                  int questionIndex = entry.key;
+                                  DocumentSnapshot question = entry.value;
+                                  String questionText = question['text'] as String? ?? 'Вопрос отсутствует';
+
+                                  if (_testType == 'multiple-choice') {
+                                    final options = (question['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+
+                                    if (options.isEmpty) {
+                                      return Center(
+                                        child: Text(
+                                          'Ошибка: Вопрос не содержит вариантов ответа. Обратитесь к администратору.',
+                                          style: TextStyle(
+                                            color: _currentTheme == 'light' ? Colors.red : Colors.redAccent,
+                                            fontSize: 14,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      );
+                                    }
+
+                                    return Card(
+                                      color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        side: BorderSide(
+                                          color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      elevation: _currentTheme == 'light' ? 5 : 0,
+                                      margin: const EdgeInsets.symmetric(vertical: 8.0),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16.0),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Вопрос ${questionIndex + 1}: $questionText',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            ...options.asMap().entries.map((optionEntry) {
+                                              int optionIndex = optionEntry.key;
+                                              String option = optionEntry.value;
+                                              return Padding(
+                                                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                                child: RadioListTile<int>(
+                                                  title: Text(
+                                                    option,
+                                                    style: TextStyle(
+                                                      fontSize: 16,
+                                                      color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                                    ),
+                                                  ),
+                                                  value: optionIndex,
+                                                  groupValue: _selectedAnswers[questionIndex] as int?,
+                                                  onChanged: (value) => _selectAnswer(questionIndex, value!),
+                                                  contentPadding: EdgeInsets.zero,
+                                                  activeColor: _currentTheme == 'light'
+                                                      ? const Color(0xFFFF6F61)
+                                                      : const Color(0xFF8E2DE2),
+                                                ),
+                                              );
+                                            }).toList(),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  } else if (_testType == 'writing') {
+                                    return Card(
+                                      color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        side: BorderSide(
+                                          color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      elevation: _currentTheme == 'light' ? 5 : 0,
+                                      margin: const EdgeInsets.symmetric(vertical: 8.0),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16.0),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Вопрос ${questionIndex + 1}: $questionText',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            TextField(
+                                              maxLines: 5,
+                                              decoration: InputDecoration(
+                                                hintText: 'Введите ваш ответ',
+                                                hintStyle: TextStyle(
+                                                  color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                                ),
+                                                filled: true,
+                                                fillColor: _currentTheme == 'light'
+                                                    ? Colors.grey[100]
+                                                    : Colors.white.withOpacity(0.08),
+                                                border: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(15),
+                                                  borderSide: BorderSide.none,
+                                                ),
+                                                enabledBorder: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(15),
+                                                  borderSide: const BorderSide(color: Colors.transparent),
+                                                ),
+                                                focusedBorder: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(15),
+                                                  borderSide: BorderSide(
+                                                    color: _currentTheme == 'light'
+                                                        ? const Color(0xFFFF6F61)
+                                                        : const Color(0xFF8E2DE2),
+                                                    width: 2,
+                                                  ),
+                                                ),
+                                              ),
+                                              style: TextStyle(
+                                                color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                              ),
+                                              onChanged: (value) {
+                                                _selectAnswer(questionIndex, value);
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                }).toList(),
                               const SizedBox(height: 20),
                               Center(
                                 child: _buildAnimatedButton(

@@ -106,7 +106,6 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
     try {
       DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
       if (!userDoc.exists) {
-        // Если документ пользователя не существует, создаём его с пустыми фильтрами
         await _firestore.collection('users').doc(user.uid).set({
           'history_filters': {
             'test_type': null,
@@ -117,10 +116,8 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
         return;
       }
 
-      // Получаем данные документа
       Map<String, dynamic>? data = userDoc.data() as Map<String, dynamic>?;
       if (data == null || !data.containsKey('history_filters')) {
-        // Если поле history_filters отсутствует, создаём его
         await _firestore.collection('users').doc(user.uid).set({
           'history_filters': {
             'test_type': null,
@@ -136,12 +133,8 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
         setState(() {
           _filters = HistoryFilters(
             testType: filters['test_type'] as String?,
-            startDate: filters['start_date'] != null
-                ? DateTime.parse(filters['start_date'])
-                : null,
-            endDate: filters['end_date'] != null
-                ? DateTime.parse(filters['end_date'])
-                : null,
+            startDate: filters['start_date'] != null ? DateTime.parse(filters['start_date']) : null,
+            endDate: filters['end_date'] != null ? DateTime.parse(filters['end_date']) : null,
           );
           _startDate = _filters.startDate;
           _endDate = _filters.endDate;
@@ -202,18 +195,15 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
         query = query.startAfterDocument(_lastDoc!);
       }
 
-      // Применяем фильтры
       try {
         if (_filters.testType != null) {
           query = query.where('test_type', isEqualTo: _filters.testType);
         }
         if (_filters.startDate != null) {
-          query = query.where('date',
-              isGreaterThanOrEqualTo: _filters.startDate!.toIso8601String());
+          query = query.where('date', isGreaterThanOrEqualTo: _filters.startDate!.toIso8601String());
         }
         if (_filters.endDate != null) {
-          query = query.where('date',
-              isLessThanOrEqualTo: _filters.endDate!.toIso8601String());
+          query = query.where('date', isLessThanOrEqualTo: _filters.endDate!.toIso8601String());
         }
 
         QuerySnapshot snapshot = await query.get();
@@ -247,6 +237,9 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
             'test_id': testDoc.id,
             'test_type': testDoc['test_type'] as String,
             'date': testDoc['date'] as String,
+            'is_contest': testDoc['is_contest'] as bool? ?? false,
+            'contest_id': testDoc['contest_id'] as String?,
+            'contest_name': testDoc['contest_name'] as String?,
             'categories': categories,
           });
         }
@@ -262,13 +255,10 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
           _animationController.forward();
         }
       } catch (e) {
-        // Если Firestore требует индекс, загружаем данные без фильтров
         if (e.toString().contains('requires an index')) {
           if (mounted) {
-            _showError(
-                'Для использования фильтров требуется создать индекс в Firestore. Пожалуйста, обратитесь к администратору или загрузите данные без фильтров.');
+            _showError('Для использования фильтров требуется создать индекс в Firestore. Пожалуйста, обратитесь к администратору или загрузите данные без фильтров.');
           }
-          // Загружаем без фильтров
           Query<Map<String, dynamic>> fallbackQuery = _firestore
               .collection('users')
               .doc(user.uid)
@@ -311,6 +301,9 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
               'test_id': testDoc.id,
               'test_type': testDoc['test_type'] as String,
               'date': testDoc['date'] as String,
+              'is_contest': testDoc['is_contest'] as bool? ?? false,
+              'contest_id': testDoc['contest_id'] as String?,
+              'contest_name': testDoc['contest_name'] as String?,
               'categories': categories,
             });
           }
@@ -326,7 +319,7 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
             _animationController.forward();
           }
         } else {
-          throw e; // Перебрасываем другие ошибки
+          throw e;
         }
       }
     } catch (e) {
@@ -698,21 +691,20 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
 
     Map<String, List<Map<String, dynamic>>> groupedByTestType = {};
     for (var test in _tests) {
-      String testType = test['test_type'] as String;
-      if (!groupedByTestType.containsKey(testType)) {
-        groupedByTestType[testType] = [];
+      String key = test['is_contest'] == true ? (test['contest_name'] as String? ?? test['test_type']) : test['test_type'] as String;
+      if (!groupedByTestType.containsKey(key)) {
+        groupedByTestType[key] = [];
       }
-      groupedByTestType[testType]!.add(test);
+      groupedByTestType[key]!.add(test);
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: groupedByTestType.entries.map((entry) {
-        String testType = entry.key;
+        String displayName = entry.key;
         List<Map<String, dynamic>> testsOfType = entry.value;
 
         int totalTests = testsOfType.length;
-
         double totalPoints = 0.0;
         int totalCorrect = 0;
         int totalQuestions = 0;
@@ -720,26 +712,19 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
 
         for (var test in testsOfType) {
           List<Map<String, dynamic>> categories = test['categories'] as List<Map<String, dynamic>>;
-          double testPoints = categories.fold(
-              0.0, (sum, cat) => sum + (cat['points'] as double));
+          double testPoints = categories.fold(0.0, (sum, cat) => sum + (cat['points'] as double));
           totalPoints += testPoints;
-
-          totalCorrect += categories.fold(
-              0, (sum, cat) => sum + (cat['correct_answers'] as int));
-          totalQuestions += categories.fold(
-              0, (sum, cat) => sum + (cat['total_questions'] as int));
-          totalTimeSpent += categories.fold(
-              0, (sum, cat) => sum + (cat['time_spent'] as int));
+          totalCorrect += categories.fold(0, (sum, cat) => sum + (cat['correct_answers'] as int));
+          totalQuestions += categories.fold(0, (sum, cat) => sum + (cat['total_questions'] as int));
+          totalTimeSpent += categories.fold(0, (sum, cat) => sum + (cat['time_spent'] as int));
         }
 
         double avgPoints = totalTests > 0 ? totalPoints / totalTests : 0.0;
-        double avgCorrectPercentage =
-            totalQuestions > 0 ? (totalCorrect / totalQuestions * 100) : 0.0;
+        double avgCorrectPercentage = totalQuestions > 0 ? (totalCorrect / totalQuestions * 100) : 0.0;
 
         List<ProgressPoint> progressData = testsOfType.map((test) {
           List<Map<String, dynamic>> categories = test['categories'] as List<Map<String, dynamic>>;
-          double testPoints = categories.fold(
-              0.0, (sum, cat) => sum + (cat['points'] as double));
+          double testPoints = categories.fold(0.0, (sum, cat) => sum + (cat['points'] as double));
           return ProgressPoint(
             DateTime.parse(test['date'] as String),
             testPoints,
@@ -776,7 +761,7 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Статистика: $testType',
+                          'Статистика: $displayName',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -997,7 +982,9 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
                           itemCount: _tests.length,
                           itemBuilder: (context, index) {
                             final test = _tests[index];
-                            final testType = test['test_type'] as String;
+                            final displayName = test['is_contest'] == true
+                                ? (test['contest_name'] as String? ?? test['test_type'])
+                                : test['test_type'] as String;
                             final date = DateTime.parse(test['date'] as String);
 
                             return FadeTransition(
@@ -1017,11 +1004,13 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
                                   margin: const EdgeInsets.symmetric(vertical: 4.0),
                                   child: ListTile(
                                     leading: Icon(
-                                      Icons.history,
-                                      color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                      test['is_contest'] == true ? Icons.emoji_events : Icons.history,
+                                      color: test['is_contest'] == true
+                                          ? (_currentTheme == 'light' ? Colors.amber : Colors.amberAccent)
+                                          : (_currentTheme == 'light' ? Colors.grey : Colors.white70),
                                     ),
                                     title: Text(
-                                      testType,
+                                      displayName,
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
@@ -1040,8 +1029,8 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
                                     ),
                                     onTap: () {
                                       List<Map<String, dynamic>> categories = test['categories'] as List<Map<String, dynamic>>;
-                                      double testTotalPoints = categories.fold(
-                                          0.0, (sum, cat) => sum + (cat['points'] as double));
+                                      double testTotalPoints =
+                                          categories.fold(0.0, (sum, cat) => sum + (cat['points'] as double));
 
                                       showModalBottomSheet(
                                         context: context,
@@ -1060,7 +1049,7 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
                                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                   children: [
                                                     Text(
-                                                      'Результаты теста: $testType',
+                                                      'Результаты: $displayName',
                                                       style: TextStyle(
                                                         fontSize: 18,
                                                         fontWeight: FontWeight.bold,
@@ -1068,7 +1057,7 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
                                                       ),
                                                     ),
                                                     Text(
-                                                      'Общий балл: ${testTotalPoints.toStringAsFixed(1)}',
+                                                      'Балл: ${testTotalPoints.toStringAsFixed(1)}',
                                                       style: TextStyle(
                                                         fontSize: 16,
                                                         fontWeight: FontWeight.bold,
@@ -1135,7 +1124,7 @@ class HistoryPageState extends State<HistoryPage> with SingleTickerProviderState
                                                               shape: RoundedRectangleBorder(
                                                                   borderRadius: BorderRadius.circular(15)),
                                                               title: Text(
-                                                                'Результат: $testType - $catName',
+                                                                'Результат: $displayName - $catName',
                                                                 style: TextStyle(
                                                                   color: _currentTheme == 'light'
                                                                       ? const Color(0xFF2E2E2E)
@@ -1321,7 +1310,6 @@ class ProgressLinePainter extends CustomPainter {
       ..color = lineColor
       ..style = PaintingStyle.fill;
 
-    // Временно убираем TextPainter для проверки компиляции
     final axisPaint = Paint()
       ..color = textColor
       ..strokeWidth = 1;
@@ -1347,8 +1335,6 @@ class ProgressLinePainter extends CustomPainter {
     }
 
     canvas.drawPath(path, paint);
-
-    // Оси
     canvas.drawLine(Offset(40, size.height - 20), Offset(size.width, size.height - 20), axisPaint);
     canvas.drawLine(Offset(40, 20), Offset(40, size.height - 20), axisPaint);
   }
