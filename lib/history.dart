@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Модель для хранения фильтров
 class HistoryFilters {
@@ -31,11 +32,11 @@ class HistoryPage extends StatefulWidget {
   HistoryPageState createState() => HistoryPageState();
 }
 
-class HistoryPageState extends State<HistoryPage> {
+class HistoryPageState extends State<HistoryPage> with SingleTickerProviderStateMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   DocumentSnapshot? _lastDoc;
-  List<Map<String, dynamic>> _tests = []; // Список тестов с категориями
+  List<Map<String, dynamic>> _tests = [];
   bool _hasMore = true;
   bool _isLoading = true;
   final int _pageSize = 10;
@@ -45,13 +46,42 @@ class HistoryPageState extends State<HistoryPage> {
   List<String> _testTypes = [];
   DateTime? _startDate;
   DateTime? _endDate;
+  String _currentTheme = 'light';
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+    _animationController.forward();
     _loadTestTypes();
     _loadSelectedFilters();
     _loadHistory(reset: true);
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentTheme = prefs.getString('theme') ?? 'light';
+    });
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadTestTypes() async {
@@ -141,7 +171,7 @@ class HistoryPageState extends State<HistoryPage> {
           .collection('users')
           .doc(user.uid)
           .collection('test_history')
-          .orderBy('date', descending: true) // Сортировка по убыванию даты
+          .orderBy('date', descending: true)
           .limit(_pageSize);
 
       if (_lastDoc != null && !reset) {
@@ -166,7 +196,6 @@ class HistoryPageState extends State<HistoryPage> {
         _tests.clear();
       }
 
-      // Загружаем категории для каждого теста
       List<Map<String, dynamic>> loadedTests = [];
       for (var testDoc in snapshot.docs) {
         QuerySnapshot categoriesSnapshot = await _firestore
@@ -203,6 +232,8 @@ class HistoryPageState extends State<HistoryPage> {
           _hasMore = snapshot.docs.length == _pageSize;
           _isLoading = false;
         });
+        _animationController.reset();
+        _animationController.forward();
       }
     } catch (e) {
       if (mounted) {
@@ -217,7 +248,13 @@ class HistoryPageState extends State<HistoryPage> {
   void _showError(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
+        SnackBar(
+          content: Text(
+            message,
+            style: TextStyle(color: _currentTheme == 'light' ? Colors.white : Colors.black),
+          ),
+          backgroundColor: _currentTheme == 'light' ? Colors.red : Colors.redAccent,
+        ),
       );
     }
   }
@@ -226,17 +263,37 @@ class HistoryPageState extends State<HistoryPage> {
     bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Очистить историю?'),
-        content: const Text(
-            'Вы уверены, что хотите удалить всю историю тестов? Это действие нельзя отменить.'),
+        backgroundColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: Text(
+          'Очистить историю?',
+          style: TextStyle(
+            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Вы уверены, что хотите удалить всю историю тестов? Это действие нельзя отменить.',
+          style: TextStyle(
+            color: _currentTheme == 'light' ? Colors.grey[800] : Colors.white70,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
+            child: Text(
+              'Отмена',
+              style: TextStyle(
+                color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+              ),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Очистить', style: TextStyle(color: Colors.red)),
+            child: const Text(
+              'Очистить',
+              style: TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -252,7 +309,6 @@ class HistoryPageState extends State<HistoryPage> {
               .collection('test_history')
               .get();
           for (var doc in historySnapshot.docs) {
-            // Удаляем подколлекцию categories
             QuerySnapshot categoriesSnapshot = await _firestore
                 .collection('users')
                 .doc(user.uid)
@@ -263,7 +319,6 @@ class HistoryPageState extends State<HistoryPage> {
             for (var catDoc in categoriesSnapshot.docs) {
               await catDoc.reference.delete();
             }
-            // Удаляем сам тест
             await doc.reference.delete();
           }
           if (mounted) {
@@ -273,8 +328,16 @@ class HistoryPageState extends State<HistoryPage> {
               _hasMore = false;
             });
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('История очищена')),
+              SnackBar(
+                content: Text(
+                  'История очищена',
+                  style: TextStyle(color: _currentTheme == 'light' ? Colors.white : Colors.black),
+                ),
+                backgroundColor: _currentTheme == 'light' ? Colors.green : Colors.greenAccent,
+              ),
             );
+            _animationController.reset();
+            _animationController.forward();
           }
         } catch (e) {
           if (mounted) {
@@ -288,17 +351,25 @@ class HistoryPageState extends State<HistoryPage> {
   void _showFilterModal() {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // Чтобы модальное окно могло растягиваться
+      isScrollControlled: true,
+      backgroundColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         return Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(20.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Фильтры',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                ),
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
@@ -325,10 +396,30 @@ class HistoryPageState extends State<HistoryPage> {
                     );
                   });
                 },
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  prefixIcon: Icon(Icons.filter_alt, color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
+                  filled: true,
+                  fillColor: _currentTheme == 'light' ? Colors.grey[100] : Colors.white.withOpacity(0.08),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: const BorderSide(color: Colors.transparent),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: BorderSide(
+                      color: _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFF8E2DE2),
+                      width: 2,
+                    ),
+                  ),
                   labelText: 'Выберите вид теста',
+                  labelStyle: TextStyle(color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
                 ),
+                style: TextStyle(color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white),
+                dropdownColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
               ),
               const SizedBox(height: 16),
               Row(
@@ -341,6 +432,18 @@ class HistoryPageState extends State<HistoryPage> {
                           initialDate: _startDate ?? DateTime.now(),
                           firstDate: DateTime(2000),
                           lastDate: DateTime.now(),
+                          builder: (context, child) {
+                            return Theme(
+                              data: ThemeData.light().copyWith(
+                                colorScheme: ColorScheme.light(
+                                  primary: _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFF8E2DE2),
+                                  onPrimary: Colors.white,
+                                ),
+                                dialogBackgroundColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
+                              ),
+                              child: child!,
+                            );
+                          },
                         );
                         if (picked != null && mounted) {
                           setState(() {
@@ -354,19 +457,39 @@ class HistoryPageState extends State<HistoryPage> {
                         }
                       },
                       child: InputDecorator(
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Дата начала',
-                          border: OutlineInputBorder(),
+                          labelStyle: TextStyle(color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
+                          filled: true,
+                          fillColor: _currentTheme == 'light' ? Colors.grey[100] : Colors.white.withOpacity(0.08),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                            borderSide: const BorderSide(color: Colors.transparent),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                            borderSide: BorderSide(
+                              color: _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFF8E2DE2),
+                              width: 2,
+                            ),
+                          ),
                         ),
                         child: Text(
                           _startDate != null
                               ? DateFormat('d MMMM yyyy', 'ru').format(_startDate!)
                               : 'Выберите дату',
+                          style: TextStyle(
+                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: GestureDetector(
                       onTap: () async {
@@ -375,6 +498,18 @@ class HistoryPageState extends State<HistoryPage> {
                           initialDate: _endDate ?? DateTime.now(),
                           firstDate: DateTime(2000),
                           lastDate: DateTime.now(),
+                          builder: (context, child) {
+                            return Theme(
+                              data: ThemeData.light().copyWith(
+                                colorScheme: ColorScheme.light(
+                                  primary: _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFF8E2DE2),
+                                  onPrimary: Colors.white,
+                                ),
+                                dialogBackgroundColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
+                              ),
+                              child: child!,
+                            );
+                          },
                         );
                         if (picked != null && mounted) {
                           setState(() {
@@ -388,37 +523,57 @@ class HistoryPageState extends State<HistoryPage> {
                         }
                       },
                       child: InputDecorator(
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Дата окончания',
-                          border: OutlineInputBorder(),
+                          labelStyle: TextStyle(color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
+                          filled: true,
+                          fillColor: _currentTheme == 'light' ? Colors.grey[100] : Colors.white.withOpacity(0.08),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                            borderSide: const BorderSide(color: Colors.transparent),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                            borderSide: BorderSide(
+                              color: _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFF8E2DE2),
+                              width: 2,
+                            ),
+                          ),
                         ),
                         child: Text(
                           _endDate != null
                               ? DateFormat('d MMMM yyyy', 'ru').format(_endDate!)
                               : 'Выберите дату',
+                          style: TextStyle(
+                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  ElevatedButton(
+                  _buildAnimatedButton(
                     onPressed: () async {
                       await _saveFilters();
                       await _loadHistory(reset: true);
                       Navigator.pop(context);
                     },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Применить'),
+                    gradientColors: _currentTheme == 'light'
+                        ? [const Color(0xFF4A90E2), const Color(0xFF50C9C3)]
+                        : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
+                    label: 'Применить',
                   ),
-                  TextButton(
+                  const SizedBox(width: 16),
+                  _buildAnimatedButton(
                     onPressed: () async {
                       setState(() {
                         _filters = HistoryFilters();
@@ -429,13 +584,12 @@ class HistoryPageState extends State<HistoryPage> {
                       await _loadHistory(reset: true);
                       Navigator.pop(context);
                     },
-                    child: const Text(
-                      'Сбросить',
-                      style: TextStyle(color: Colors.red),
-                    ),
+                    gradientColors: [Colors.grey, Colors.grey],
+                    label: 'Сбросить',
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
             ],
           ),
         );
@@ -448,7 +602,6 @@ class HistoryPageState extends State<HistoryPage> {
       return const SizedBox.shrink();
     }
 
-    // Группируем тесты по test_type
     Map<String, List<Map<String, dynamic>>> groupedByTestType = {};
     for (var test in _tests) {
       String testType = test['test_type'] as String;
@@ -458,17 +611,14 @@ class HistoryPageState extends State<HistoryPage> {
       groupedByTestType[testType]!.add(test);
     }
 
-    // Для каждого test_type создаём отдельную карточку статистики
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: groupedByTestType.entries.map((entry) {
         String testType = entry.key;
         List<Map<String, dynamic>> testsOfType = entry.value;
 
-        // Подсчитываем общее количество тестов этого типа
         int totalTests = testsOfType.length;
 
-        // Вычисляем статистику для этого типа
         double totalPoints = 0.0;
         int totalCorrect = 0;
         int totalQuestions = 0;
@@ -492,7 +642,6 @@ class HistoryPageState extends State<HistoryPage> {
         double avgCorrectPercentage =
             totalQuestions > 0 ? (totalCorrect / totalQuestions * 100) : 0.0;
 
-        // Подготовка данных для графика
         List<ProgressPoint> progressData = testsOfType.map((test) {
           List<Map<String, dynamic>> categories = test['categories'] as List<Map<String, dynamic>>;
           double testPoints = categories.fold(
@@ -504,32 +653,127 @@ class HistoryPageState extends State<HistoryPage> {
         }).toList()
           ..sort((a, b) => a.date.compareTo(b.date));
 
-        return Card(
-          elevation: 2,
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Статистика: $testType',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        return FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: Card(
+              color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
+                  width: 1,
                 ),
-                const SizedBox(height: 8),
-                Text('Всего тестов: $totalTests'),
-                Text('Средний балл: ${avgPoints.toStringAsFixed(1)}'),
-                Text('Процент правильных: ${avgCorrectPercentage.toStringAsFixed(1)}%'),
-                Text('Время: ${(totalTimeSpent ~/ 60)} мин'),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 150,
-                  child: CustomPaint(
-                    painter: ProgressLinePainter(progressData),
-                    child: Container(),
-                  ),
+              ),
+              elevation: _currentTheme == 'light' ? 8 : 0,
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.analytics,
+                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Статистика: $testType',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.format_list_numbered,
+                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Всего тестов: $totalTests',
+                          style: TextStyle(
+                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.star,
+                          color: _currentTheme == 'light' ? Colors.amber : Colors.amberAccent,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Средний балл: ${avgPoints.toStringAsFixed(1)}',
+                          style: TextStyle(
+                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.check_circle,
+                          color: _currentTheme == 'light' ? Colors.green : Colors.greenAccent,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Процент правильных: ${avgCorrectPercentage.toStringAsFixed(1)}%',
+                          style: TextStyle(
+                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.timer,
+                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Время: ${(totalTimeSpent ~/ 60)} мин',
+                          style: TextStyle(
+                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 150,
+                      child: CustomPaint(
+                        painter: ProgressLinePainter(
+                          progressData,
+                          textColor: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                          lineColor: _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFF8E2DE2),
+                        ),
+                        child: Container(),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         );
@@ -542,223 +786,419 @@ class HistoryPageState extends State<HistoryPage> {
     final user = _auth.currentUser;
 
     if (user == null) {
-      return const Center(child: Text('Пользователь не авторизован'));
+      return Center(
+        child: Text(
+          'Пользователь не авторизован',
+          style: TextStyle(
+            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+            fontSize: 16,
+          ),
+        ),
+      );
     }
 
-    return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await _loadHistory(reset: true);
-        },
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'История тестов',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.filter_alt,
-                            color: Colors.blue,
-                          ),
-                          onPressed: _showFilterModal,
-                          tooltip: 'Фильтры',
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: _clearHistory,
-                          tooltip: 'Очистить историю',
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _buildStatistics(),
-                const SizedBox(height: 8),
-                if (_isLoading && _tests.isEmpty)
-                  const Center(child: CircularProgressIndicator())
-                else if (_tests.isEmpty)
-                  const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'История пуста',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Пройдите тест, чтобы увидеть результаты здесь.',
-                          style: TextStyle(fontSize: 14, color: Colors.grey),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  Column(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: _currentTheme == 'light'
+              ? [Colors.white, const Color(0xFFF5E6FF)]
+              : [const Color(0xFF1A0033), const Color(0xFF2E004F)],
+        ),
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: RefreshIndicator(
+          onRefresh: () async {
+            await _loadHistory(reset: true);
+          },
+          color: _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFF8E2DE2),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _tests.length,
-                        itemBuilder: (context, index) {
-                          final test = _tests[index];
-                          final testType = test['test_type'] as String;
-                          final date = DateTime.parse(test['date'] as String);
-
-                          return Card(
-                            elevation: 2,
-                            margin: const EdgeInsets.symmetric(vertical: 4.0),
-                            child: ListTile(
-                              title: Text(testType),
-                              subtitle: Text(
-                                'Дата: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(date)}',
-                              ),
-                              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                              onTap: () {
-                                List<Map<String, dynamic>> categories = test['categories'] as List<Map<String, dynamic>>;
-                                // Считаем общий балл теста
-                                double testTotalPoints = categories.fold(
-                                    0.0, (sum, cat) => sum + (cat['points'] as double));
-
-                                showModalBottomSheet(
-                                  context: context,
-                                  builder: (context) {
-                                    return Padding(
-                                      padding: const EdgeInsets.all(16.0),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                'Результаты теста: $testType',
-                                                style: const TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                              Text(
-                                                'Общий балл: ${testTotalPoints.toStringAsFixed(1)}',
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.blue,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Expanded(
-                                            child: ListView.builder(
-                                              shrinkWrap: true,
-                                              itemCount: categories.length,
-                                              itemBuilder: (context, idx) {
-                                                final category = categories[idx];
-                                                final catName = category['category'] as String;
-                                                final points = (category['points'] as double);
-                                                final correctAnswers = category['correct_answers'] as int;
-                                                final totalQuestions = category['total_questions'] as int;
-                                                final timeSpent = category['time_spent'] as int;
-                                                final totalTime = category['total_time'] as int;
-                                                final percentage = totalQuestions > 0
-                                                    ? (correctAnswers / totalQuestions * 100)
-                                                    : 0.0;
-
-                                                return ListTile(
-                                                  title: Text(
-                                                    '$catName ${timeSpent ~/ 60}/${totalTime ~/ 60} мин',
-                                                    style: const TextStyle(fontWeight: FontWeight.bold),
-                                                  ),
-                                                  subtitle: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    children: [
-                                                      Text('Баллы: ${points.toStringAsFixed(1)}'),
-                                                      Text(
-                                                          'Правильных: $correctAnswers/$totalQuestions (${percentage.toStringAsFixed(1)}%)'),
-                                                    ],
-                                                  ),
-                                                  onTap: () {
-                                                    showDialog(
-                                                      context: context,
-                                                      builder: (context) => AlertDialog(
-                                                        title: Text('Результат: $testType - $catName'),
-                                                        content: SingleChildScrollView(
-                                                          child: Column(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                            mainAxisSize: MainAxisSize.min,
-                                                            children: [
-                                                              Text(
-                                                                  'Дата: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(date)}'),
-                                                              const SizedBox(height: 8),
-                                                              Text('Баллы: ${points.toStringAsFixed(1)}'),
-                                                              const SizedBox(height: 8),
-                                                              Text(
-                                                                  'Правильных: $correctAnswers/$totalQuestions (${percentage.toStringAsFixed(1)}%)'),
-                                                              const SizedBox(height: 8),
-                                                              Text('Время: ${timeSpent ~/ 60} мин из ${totalTime ~/ 60} мин'),
-                                                            ],
-                                                          ),
-                                                        ),
-                                                        actions: [
-                                                          TextButton(
-                                                            onPressed: () => Navigator.pop(context),
-                                                            child: const Text('Закрыть'),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    );
-                                                  },
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Center(
-                                            child: TextButton(
-                                              onPressed: () => Navigator.pop(context),
-                                              child: const Text('Закрыть', style: TextStyle(color: Colors.blue)),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                );
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                      if (_hasMore)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: _isLoading
-                              ? const Center(child: CircularProgressIndicator())
-                              : ElevatedButton(
-                                  onPressed: () async {
-                                    await _loadHistory();
-                                  },
-                                  child: const Text('Загрузить ещё'),
-                                ),
+                      Text(
+                        'История тестов',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                          letterSpacing: 1.2,
                         ),
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              Icons.filter_alt,
+                              color: _currentTheme == 'light' ? const Color(0xFF4A90E2) : const Color(0xFF8E2DE2),
+                            ),
+                            onPressed: _showFilterModal,
+                            tooltip: 'Фильтры',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: _clearHistory,
+                            tooltip: 'Очистить историю',
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-              ],
+                  const SizedBox(height: 16),
+                  _buildStatistics(),
+                  const SizedBox(height: 16),
+                  if (_isLoading && _tests.isEmpty)
+                    const Center(child: CircularProgressIndicator())
+                  else if (_tests.isEmpty)
+                    Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          FadeTransition(
+                            opacity: _fadeAnimation,
+                            child: SlideTransition(
+                              position: _slideAnimation,
+                              child: Text(
+                                'История пуста',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          FadeTransition(
+                            opacity: _fadeAnimation,
+                            child: SlideTransition(
+                              position: _slideAnimation,
+                              child: Text(
+                                'Пройдите тест, чтобы увидеть результаты здесь.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Column(
+                      children: [
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _tests.length,
+                          itemBuilder: (context, index) {
+                            final test = _tests[index];
+                            final testType = test['test_type'] as String;
+                            final date = DateTime.parse(test['date'] as String);
+
+                            return FadeTransition(
+                              opacity: _fadeAnimation,
+                              child: SlideTransition(
+                                position: _slideAnimation,
+                                child: Card(
+                                  color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(15),
+                                    side: BorderSide(
+                                      color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  elevation: _currentTheme == 'light' ? 5 : 0,
+                                  margin: const EdgeInsets.symmetric(vertical: 4.0),
+                                  child: ListTile(
+                                    leading: Icon(
+                                      Icons.history,
+                                      color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                    ),
+                                    title: Text(
+                                      testType,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      'Дата: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(date)}',
+                                      style: TextStyle(
+                                        color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                      ),
+                                    ),
+                                    trailing: Icon(
+                                      Icons.arrow_forward_ios,
+                                      size: 16,
+                                      color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                    ),
+                                    onTap: () {
+                                      List<Map<String, dynamic>> categories = test['categories'] as List<Map<String, dynamic>>;
+                                      double testTotalPoints = categories.fold(
+                                          0.0, (sum, cat) => sum + (cat['points'] as double));
+
+                                      showModalBottomSheet(
+                                        context: context,
+                                        backgroundColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
+                                        shape: const RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                                        ),
+                                        builder: (context) {
+                                          return Padding(
+                                            padding: const EdgeInsets.all(16.0),
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                  children: [
+                                                    Text(
+                                                      'Результаты теста: $testType',
+                                                      style: TextStyle(
+                                                        fontSize: 18,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      'Общий балл: ${testTotalPoints.toStringAsFixed(1)}',
+                                                      style: TextStyle(
+                                                        fontSize: 16,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: _currentTheme == 'light'
+                                                            ? const Color(0xFF4A90E2)
+                                                            : const Color(0xFF8E2DE2),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 12),
+                                                Expanded(
+                                                  child: ListView.builder(
+                                                    shrinkWrap: true,
+                                                    itemCount: categories.length,
+                                                    itemBuilder: (context, idx) {
+                                                      final category = categories[idx];
+                                                      final catName = category['category'] as String;
+                                                      final points = (category['points'] as double);
+                                                      final correctAnswers = category['correct_answers'] as int;
+                                                      final totalQuestions = category['total_questions'] as int;
+                                                      final timeSpent = category['time_spent'] as int;
+                                                      final totalTime = category['total_time'] as int;
+                                                      final percentage = totalQuestions > 0
+                                                          ? (correctAnswers / totalQuestions * 100)
+                                                          : 0.0;
+
+                                                      return ListTile(
+                                                        leading: Icon(
+                                                          Icons.category,
+                                                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                                        ),
+                                                        title: Text(
+                                                          '$catName ${timeSpent ~/ 60}/${totalTime ~/ 60} мин',
+                                                          style: TextStyle(
+                                                            fontWeight: FontWeight.bold,
+                                                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                                          ),
+                                                        ),
+                                                        subtitle: Column(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Text(
+                                                              'Баллы: ${points.toStringAsFixed(1)}',
+                                                              style: TextStyle(
+                                                                color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                                              ),
+                                                            ),
+                                                            Text(
+                                                              'Правильных: $correctAnswers/$totalQuestions (${percentage.toStringAsFixed(1)}%)',
+                                                              style: TextStyle(
+                                                                color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        onTap: () {
+                                                          showDialog(
+                                                            context: context,
+                                                            builder: (context) => AlertDialog(
+                                                              backgroundColor: _currentTheme == 'light'
+                                                                  ? Colors.white
+                                                                  : const Color(0xFF2E004F),
+                                                              shape: RoundedRectangleBorder(
+                                                                  borderRadius: BorderRadius.circular(15)),
+                                                              title: Text(
+                                                                'Результат: $testType - $catName',
+                                                                style: TextStyle(
+                                                                  color: _currentTheme == 'light'
+                                                                      ? const Color(0xFF2E2E2E)
+                                                                      : Colors.white,
+                                                                  fontWeight: FontWeight.bold,
+                                                                ),
+                                                              ),
+                                                              content: SingleChildScrollView(
+                                                                child: Column(
+                                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                                  mainAxisSize: MainAxisSize.min,
+                                                                  children: [
+                                                                    Text(
+                                                                      'Дата: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(date)}',
+                                                                      style: TextStyle(
+                                                                        color: _currentTheme == 'light'
+                                                                            ? Colors.grey[800]
+                                                                            : Colors.white70,
+                                                                      ),
+                                                                    ),
+                                                                    const SizedBox(height: 8),
+                                                                    Text(
+                                                                      'Баллы: ${points.toStringAsFixed(1)}',
+                                                                      style: TextStyle(
+                                                                        color: _currentTheme == 'light'
+                                                                            ? Colors.grey[800]
+                                                                            : Colors.white70,
+                                                                      ),
+                                                                    ),
+                                                                    const SizedBox(height: 8),
+                                                                    Text(
+                                                                      'Правильных: $correctAnswers/$totalQuestions (${percentage.toStringAsFixed(1)}%)',
+                                                                      style: TextStyle(
+                                                                        color: _currentTheme == 'light'
+                                                                            ? Colors.grey[800]
+                                                                            : Colors.white70,
+                                                                      ),
+                                                                    ),
+                                                                    const SizedBox(height: 8),
+                                                                    Text(
+                                                                      'Время: ${timeSpent ~/ 60} мин из ${totalTime ~/ 60} мин',
+                                                                      style: TextStyle(
+                                                                        color: _currentTheme == 'light'
+                                                                            ? Colors.grey[800]
+                                                                            : Colors.white70,
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                              actions: [
+                                                                TextButton(
+                                                                  onPressed: () => Navigator.pop(context),
+                                                                  child: Text(
+                                                                    'Закрыть',
+                                                                    style: TextStyle(
+                                                                      color: _currentTheme == 'light'
+                                                                          ? const Color(0xFF4A90E2)
+                                                                          : const Color(0xFF8E2DE2),
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          );
+                                                        },
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 16),
+                                                Center(
+                                                  child: _buildAnimatedButton(
+                                                    onPressed: () => Navigator.pop(context),
+                                                    gradientColors: _currentTheme == 'light'
+                                                        ? [const Color(0xFFFF6F61), const Color(0xFFFFB74D)]
+                                                        : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
+                                                    label: 'Закрыть',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        if (_hasMore)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12.0),
+                            child: _isLoading
+                                ? const Center(child: CircularProgressIndicator())
+                                : _buildAnimatedButton(
+                                    onPressed: () async {
+                                      await _loadHistory();
+                                    },
+                                    gradientColors: _currentTheme == 'light'
+                                        ? [const Color(0xFF4A90E2), const Color(0xFF50C9C3)]
+                                        : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
+                                    label: 'Загрузить ещё',
+                                  ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnimatedButton({
+    required VoidCallback? onPressed,
+    required List<Color> gradientColors,
+    required String label,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      child: GestureDetector(
+        onTap: onPressed,
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 200),
+          scale: onPressed != null ? 1.0 : 0.95,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: gradientColors,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: _currentTheme == 'light' && onPressed != null
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 10,
+                        offset: const Offset(0, 5),
+                      ),
+                    ]
+                  : [],
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
             ),
           ),
         ),
@@ -767,56 +1207,56 @@ class HistoryPageState extends State<HistoryPage> {
   }
 }
 
-// Простой линейный график с использованием CustomPainter
 class ProgressLinePainter extends CustomPainter {
   final List<ProgressPoint> data;
+  final Color textColor;
+  final Color lineColor;
 
-  ProgressLinePainter(this.data);
+  ProgressLinePainter(this.data, {required this.textColor, required this.lineColor});
 
   @override
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
 
     final paint = Paint()
-      ..color = Colors.blue
+      ..color = lineColor
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
 
     final pointPaint = Paint()
-      ..color = Colors.blue
+      ..color = lineColor
       ..style = PaintingStyle.fill;
 
-    // Нормализация данных
+    // Временно убираем TextPainter для проверки компиляции
+    final axisPaint = Paint()
+      ..color = textColor
+      ..strokeWidth = 1;
+
     double maxPoints = data.map((p) => p.points).reduce((a, b) => a > b ? a : b);
     maxPoints = maxPoints == 0 ? 1 : maxPoints;
     final minDate = data.first.date;
     final maxDate = data.last.date;
     final dateRange = maxDate.difference(minDate).inDays.toDouble();
-    final widthPerDay = dateRange > 0 ? size.width / dateRange : size.width;
+    final widthPerDay = dateRange > 0 ? (size.width - 40) / dateRange : size.width - 40;
 
-    // Построение пути
     Path path = Path();
     for (int i = 0; i < data.length; i++) {
       final point = data[i];
-      final x = point.date.difference(minDate).inDays * widthPerDay;
-      final y = size.height * (1 - point.points / maxPoints);
+      final x = 40 + point.date.difference(minDate).inDays * widthPerDay;
+      final y = (size.height - 40) * (1 - point.points / maxPoints) + 20;
       if (i == 0) {
         path.moveTo(x, y);
       } else {
         path.lineTo(x, y);
       }
-      // Рисуем точки
       canvas.drawCircle(Offset(x, y), 4, pointPaint);
     }
 
     canvas.drawPath(path, paint);
 
     // Оси
-    final axisPaint = Paint()
-      ..color = Colors.grey
-      ..strokeWidth = 1;
-    canvas.drawLine(Offset(0, size.height), Offset(size.width, size.height), axisPaint);
-    canvas.drawLine(Offset(0, 0), Offset(0, size.height), axisPaint);
+    canvas.drawLine(Offset(40, size.height - 20), Offset(size.width, size.height - 20), axisPaint);
+    canvas.drawLine(Offset(40, 20), Offset(40, size.height - 20), axisPaint);
   }
 
   @override
