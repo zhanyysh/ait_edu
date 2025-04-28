@@ -177,36 +177,38 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
-    return WillPopScope(
-      onWillPop: () async {
-        SystemNavigator.pop();
-        return false;
-      },
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Stack(
-          children: [
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: _backgroundColors,
-                ),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: _backgroundColors,
               ),
-              child: SafeArea(
-                child: Center(
-                  child: SingleChildScrollView(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.08),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Logo or App Name
-                          Center(
+            ),
+            child: SafeArea(
+              child: SizedBox(
+                height: screenHeight,
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: screenWidth * 0.05,
+                      vertical: screenHeight * 0.02,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Logo or App Name
+                        Padding(
+                          padding: EdgeInsets.only(top: screenHeight * 0.05, bottom: screenHeight * 0.03),
+                          child: Center(
                             child: ScaleTransition(
                               scale: _scaleAnimation,
                               child: FadeTransition(
@@ -223,287 +225,287 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
                               ),
                             ),
                           ),
-                          const SizedBox(height: 24),
-                          // Form Card
-                          Card(
-                            color: _fieldFillColor,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            elevation: 4,
-                            child: Padding(
-                              padding: const EdgeInsets.all(20.0),
-                              child: Form(
-                                key: _formKey,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    // Email
-                                    TextFormField(
-                                      controller: _emailController,
-                                      style: const TextStyle(color: _textColor),
-                                      decoration: _buildInputDecoration('Email'),
-                                      keyboardType: TextInputType.emailAddress,
-                                      autofillHints: const [AutofillHints.email],
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Введите email';
-                                        }
-                                        final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                                        if (!emailRegex.hasMatch(value)) {
-                                          return 'Введите действительный email';
-                                        }
-                                        return null;
-                                      },
-                                      textInputAction: TextInputAction.next,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    // First Name
-                                    TextFormField(
-                                      controller: _firstNameController,
-                                      style: const TextStyle(color: _textColor),
-                                      decoration: _buildInputDecoration('Имя'),
-                                      textCapitalization: TextCapitalization.words,
-                                      autofillHints: const [AutofillHints.givenName],
-                                      validator: (value) {
-                                        if (value == null || value.trim().isEmpty) {
-                                          return 'Введите ваше имя';
-                                        }
-                                        if (value.length < 2) {
-                                          return 'Имя должно содержать минимум 2 символа';
-                                        }
-                                        return null;
-                                      },
-                                      textInputAction: TextInputAction.next,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    // Last Name
-                                    TextFormField(
-                                      controller: _lastNameController,
-                                      style: const TextStyle(color: _textColor),
-                                      decoration: _buildInputDecoration('Фамилия'),
-                                      textCapitalization: TextCapitalization.words,
-                                      autofillHints: const [AutofillHints.familyName],
-                                      validator: (value) {
-                                        if (value == null || value.trim().isEmpty) {
-                                          return 'Введите вашу фамилию';
-                                        }
-                                        if (value.length < 2) {
-                                          return 'Фамилия должна содержать минимум 2 символа';
-                                        }
-                                        return null;
-                                      },
-                                      textInputAction: TextInputAction.next,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    // Password
-                                    TextFormField(
-                                      controller: _passwordController,
-                                      style: const TextStyle(color: _textColor),
-                                      decoration: _buildInputDecoration(
-                                        'Пароль',
-                                        suffixIcon: IconButton(
-                                          icon: Icon(
-                                            _passwordVisible ? Icons.visibility : Icons.visibility_off,
-                                            color: _secondaryTextColor,
-                                          ),
-                                          onPressed: () {
-                                            setState(() {
-                                              _passwordVisible = !_passwordVisible;
-                                            });
-                                          },
+                        ),
+                        // Form Card
+                        Card(
+                          color: _fieldFillColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 4,
+                          child: Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: Form(
+                              key: _formKey,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Email
+                                  TextFormField(
+                                    controller: _emailController,
+                                    style: const TextStyle(color: _textColor),
+                                    decoration: _buildInputDecoration('Email'),
+                                    keyboardType: TextInputType.emailAddress,
+                                    autofillHints: const [AutofillHints.email],
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Введите email';
+                                      }
+                                      final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                                      if (!emailRegex.hasMatch(value)) {
+                                        return 'Введите действительный email';
+                                      }
+                                      return null;
+                                    },
+                                    textInputAction: TextInputAction.next,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  // First Name
+                                  TextFormField(
+                                    controller: _firstNameController,
+                                    style: const TextStyle(color: _textColor),
+                                    decoration: _buildInputDecoration('Имя'),
+                                    textCapitalization: TextCapitalization.words,
+                                    autofillHints: const [AutofillHints.givenName],
+                                    validator: (value) {
+                                      if (value == null || value.trim().isEmpty) {
+                                        return 'Введите ваше имя';
+                                      }
+                                      if (value.length < 2) {
+                                        return 'Имя должно содержать минимум 2 символа';
+                                      }
+                                      return null;
+                                    },
+                                    textInputAction: TextInputAction.next,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  // Last Name
+                                  TextFormField(
+                                    controller: _lastNameController,
+                                    style: const TextStyle(color: _textColor),
+                                    decoration: _buildInputDecoration('Фамилия'),
+                                    textCapitalization: TextCapitalization.words,
+                                    autofillHints: const [AutofillHints.familyName],
+                                    validator: (value) {
+                                      if (value == null || value.trim().isEmpty) {
+                                        return 'Введите вашу фамилию';
+                                      }
+                                      if (value.length < 2) {
+                                        return 'Фамилия должна содержать минимум 2 символа';
+                                      }
+                                      return null;
+                                    },
+                                    textInputAction: TextInputAction.next,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  // Password
+                                  TextFormField(
+                                    controller: _passwordController,
+                                    style: const TextStyle(color: _textColor),
+                                    decoration: _buildInputDecoration(
+                                      'Пароль',
+                                      suffixIcon: IconButton(
+                                        icon: Icon(
+                                          _passwordVisible ? Icons.visibility : Icons.visibility_off,
+                                          color: _secondaryTextColor,
                                         ),
-                                      ),
-                                      obscureText: !_passwordVisible,
-                                      autofillHints: const [AutofillHints.newPassword],
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Введите пароль';
-                                        }
-                                        if (value.length < 6) {
-                                          return 'Пароль должен содержать минимум 6 символов';
-                                        }
-                                        return null;
-                                      },
-                                      onChanged: (value) {
-                                        if (_confirmPasswordController.text.isNotEmpty) {
-                                          _formKey.currentState?.validate();
-                                        }
-                                      },
-                                      textInputAction: TextInputAction.next,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    // Confirm Password
-                                    TextFormField(
-                                      controller: _confirmPasswordController,
-                                      style: const TextStyle(color: _textColor),
-                                      decoration: _buildInputDecoration(
-                                        'Подтвердите пароль',
-                                        suffixIcon: IconButton(
-                                          icon: Icon(
-                                            _confirmPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                                            color: _secondaryTextColor,
-                                          ),
-                                          onPressed: () {
-                                            setState(() {
-                                              _confirmPasswordVisible = !_confirmPasswordVisible;
-                                            });
-                                          },
-                                        ),
-                                      ),
-                                      obscureText: !_confirmPasswordVisible,
-                                      autofillHints: const [AutofillHints.newPassword],
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Подтвердите пароль';
-                                        }
-                                        if (value != _passwordController.text) {
-                                          return 'Пароли не совпадают';
-                                        }
-                                        return null;
-                                      },
-                                      textInputAction: TextInputAction.done,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    // Privacy Policy
-                                    Row(
-                                      children: [
-                                        Checkbox(
-                                          value: _agreeToTerms,
-                                          onChanged: (value) {
-                                            setState(() {
-                                              _agreeToTerms = value ?? false;
-                                            });
-                                          },
-                                          activeColor: _primaryColor,
-                                        ),
-                                        Expanded(
-                                          child: RichText(
-                                            text: TextSpan(
-                                              text: 'Я согласен с ',
-                                              style: const TextStyle(color: _textColor, fontSize: 14),
-                                              children: [
-                                                TextSpan(
-                                                  text: 'условиями конфиденциальности',
-                                                  style: TextStyle(
-                                                    color: _primaryColor,
-                                                    fontSize: 14,
-                                                    decoration: TextDecoration.underline,
-                                                  ),
-                                                  recognizer: TapGestureRecognizer()
-                                                    ..onTap = () {
-                                                      showDialog(
-                                                        context: context,
-                                                        builder: (context) => AlertDialog(
-                                                          backgroundColor: _fieldFillColor,
-                                                          title: Text(
-                                                            'Политика конфиденциальности',
-                                                            style: TextStyle(color: _textColor),
-                                                          ),
-                                                          content: Text(
-                                                            'Здесь будет текст политики конфиденциальности вашего приложения.',
-                                                            style: TextStyle(color: _secondaryTextColor),
-                                                          ),
-                                                          actions: [
-                                                            TextButton(
-                                                              onPressed: () => Navigator.pop(context),
-                                                              child: Text(
-                                                                'Закрыть',
-                                                                style: TextStyle(color: _primaryColor),
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      );
-                                                    },
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 20),
-                                    // Register Button
-                                    Semantics(
-                                      label: 'Зарегистрироваться',
-                                      button: true,
-                                      child: AnimatedContainer(
-                                        duration: const Duration(milliseconds: 200),
-                                        child: ElevatedButton(
-                                          onPressed: _isLoading ? null : _register,
-                                          style: ElevatedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                                            backgroundColor: Colors.transparent,
-                                            shadowColor: Colors.transparent,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                          ),
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              gradient: const LinearGradient(
-                                                colors: [_primaryColor, Color(0xFFDE4B7C)],
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
-                                              ),
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                            padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                                            child: const Text(
-                                              'Зарегистрироваться',
-                                              style: TextStyle(
-                                                color: _textColor,
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    // Login Link
-                                    Semantics(
-                                      label: 'Перейти к входу',
-                                      button: true,
-                                      child: TextButton(
                                         onPressed: () {
-                                          Navigator.pushReplacementNamed(context, '/login');
+                                          setState(() {
+                                            _passwordVisible = !_passwordVisible;
+                                          });
                                         },
-                                        child: const Text(
-                                          'Уже есть аккаунт? Войти',
-                                          style: TextStyle(
-                                            color: _primaryColor,
-                                            fontSize: 14,
+                                      ),
+                                    ),
+                                    obscureText: !_passwordVisible,
+                                    autofillHints: const [AutofillHints.newPassword],
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Введите пароль';
+                                      }
+                                      if (value.length < 6) {
+                                        return 'Пароль должен содержать минимум 6 символов';
+                                      }
+                                      return null;
+                                    },
+                                    onChanged: (value) {
+                                      if (_confirmPasswordController.text.isNotEmpty) {
+                                        _formKey.currentState?.validate();
+                                      }
+                                    },
+                                    textInputAction: TextInputAction.next,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  // Confirm Password
+                                  TextFormField(
+                                    controller: _confirmPasswordController,
+                                    style: const TextStyle(color: _textColor),
+                                    decoration: _buildInputDecoration(
+                                      'Подтвердите пароль',
+                                      suffixIcon: IconButton(
+                                        icon: Icon(
+                                          _confirmPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                                          color: _secondaryTextColor,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            _confirmPasswordVisible = !_confirmPasswordVisible;
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                    obscureText: !_confirmPasswordVisible,
+                                    autofillHints: const [AutofillHints.newPassword],
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Подтвердите пароль';
+                                      }
+                                      if (value != _passwordController.text) {
+                                        return 'Пароли не совпадают';
+                                      }
+                                      return null;
+                                    },
+                                    textInputAction: TextInputAction.done,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  // Privacy Policy
+                                  Row(
+                                    children: [
+                                      Checkbox(
+                                        value: _agreeToTerms,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _agreeToTerms = value ?? false;
+                                          });
+                                        },
+                                        activeColor: _primaryColor,
+                                      ),
+                                      Expanded(
+                                        child: RichText(
+                                          text: TextSpan(
+                                            text: 'Я согласен с ',
+                                            style: const TextStyle(color: _textColor, fontSize: 14),
+                                            children: [
+                                              TextSpan(
+                                                text: 'условиями конфиденциальности',
+                                                style: TextStyle(
+                                                  color: _primaryColor,
+                                                  fontSize: 14,
+                                                  decoration: TextDecoration.underline,
+                                                ),
+                                                recognizer: TapGestureRecognizer()
+                                                  ..onTap = () {
+                                                    showDialog(
+                                                      context: context,
+                                                      builder: (context) => AlertDialog(
+                                                        backgroundColor: _fieldFillColor,
+                                                        title: Text(
+                                                          'Политика конфиденциальности',
+                                                          style: TextStyle(color: _textColor),
+                                                        ),
+                                                        content: Text(
+                                                          'Здесь будет текст политики конфиденциальности вашего приложения.',
+                                                          style: TextStyle(color: _secondaryTextColor),
+                                                        ),
+                                                        actions: [
+                                                          TextButton(
+                                                            onPressed: () => Navigator.pop(context),
+                                                            child: Text(
+                                                              'Закрыть',
+                                                              style: TextStyle(color: _primaryColor),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    );
+                                                  },
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 20),
+                                  // Register Button
+                                  Semantics(
+                                    label: 'Зарегистрироваться',
+                                    button: true,
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      child: ElevatedButton(
+                                        onPressed: _isLoading ? null : _register,
+                                        style: ElevatedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                                          backgroundColor: Colors.transparent,
+                                          shadowColor: Colors.transparent,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                        ),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            gradient: const LinearGradient(
+                                              colors: [_primaryColor, Color(0xFFDE4B7C)],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                                          child: const Text(
+                                            'Зарегистрироваться',
+                                            style: TextStyle(
+                                              color: _textColor,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  // Login Link
+                                  Semantics(
+                                    label: 'Перейти к входу',
+                                    button: true,
+                                    child: TextButton(
+                                      onPressed: () {
+                                        Navigator.pushNamed(context, '/login');
+                                      },
+                                      child: const Text(
+                                        'Уже есть аккаунт? Войти',
+                                        style: TextStyle(
+                                          color: _primaryColor,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        SizedBox(height: screenHeight * 0.02),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-            // Loading Overlay
-            if (_isLoading)
-              Container(
-                color: Colors.black.withOpacity(0.5),
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(_primaryColor),
-                  ),
+          ),
+          // Loading Overlay
+          if (_isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.5),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(_primaryColor),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

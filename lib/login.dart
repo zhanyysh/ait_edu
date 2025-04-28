@@ -189,197 +189,191 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   }
 
   @override
-  Widget build(context) {
+  Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
 
-    return WillPopScope(
-      onWillPop: () async {
-        SystemNavigator.pop();
-        return false;
-      },
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Stack(
-          children: [
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: _backgroundColors,
-                ),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: _backgroundColors,
               ),
-              child: SafeArea(
-                child: Center(
-                  child: SingleChildScrollView(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.08),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Logo or App Name
-                          Center(
-                            child: ScaleTransition(
-                              scale: _scaleAnimation,
-                              child: FadeTransition(
-                                opacity: _fadeAnimation,
-                                child: Text(
-                                  'AiATesTing',
-                                  style: GoogleFonts.orbitron(
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.bold,
-                                    color: _textColor,
-                                    letterSpacing: 2,
+            ),
+            child: SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.08),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Logo or App Name
+                        Center(
+                          child: ScaleTransition(
+                            scale: _scaleAnimation,
+                            child: FadeTransition(
+                              opacity: _fadeAnimation,
+                              child: Text(
+                                'AiATesTing',
+                                style: GoogleFonts.orbitron(
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.bold,
+                                  color: _textColor,
+                                  letterSpacing: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        // Form Card
+                        Card(
+                          color: _fieldFillColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 4,
+                          child: Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: Form(
+                              key: _formKey,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Email
+                                  TextFormField(
+                                    controller: _emailController,
+                                    style: const TextStyle(color: _textColor),
+                                    decoration: _buildInputDecoration('Email'),
+                                    keyboardType: TextInputType.emailAddress,
+                                    autofillHints: const [AutofillHints.email],
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Введите email';
+                                      }
+                                      final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                                      if (!emailRegex.hasMatch(value)) {
+                                        return 'Введите действительный email';
+                                      }
+                                      return null;
+                                    },
+                                    textInputAction: TextInputAction.next,
                                   ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          // Form Card
-                          Card(
-                            color: _fieldFillColor,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            elevation: 4,
-                            child: Padding(
-                              padding: const EdgeInsets.all(20.0),
-                              child: Form(
-                                key: _formKey,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    // Email
-                                    TextFormField(
-                                      controller: _emailController,
-                                      style: const TextStyle(color: _textColor),
-                                      decoration: _buildInputDecoration('Email'),
-                                      keyboardType: TextInputType.emailAddress,
-                                      autofillHints: const [AutofillHints.email],
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Введите email';
-                                        }
-                                        final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                                        if (!emailRegex.hasMatch(value)) {
-                                          return 'Введите действительный email';
-                                        }
-                                        return null;
-                                      },
-                                      textInputAction: TextInputAction.next,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    // Password
-                                    TextFormField(
-                                      controller: _passwordController,
-                                      style: const TextStyle(color: _textColor),
-                                      decoration: _buildInputDecoration(
-                                        'Пароль',
-                                        suffixIcon: IconButton(
-                                          icon: Icon(
-                                            _passwordVisible ? Icons.visibility : Icons.visibility_off,
-                                            color: _secondaryTextColor,
-                                          ),
-                                          onPressed: () {
-                                            setState(() {
-                                              _passwordVisible = !_passwordVisible;
-                                            });
-                                          },
+                                  const SizedBox(height: 16),
+                                  // Password
+                                  TextFormField(
+                                    controller: _passwordController,
+                                    style: const TextStyle(color: _textColor),
+                                    decoration: _buildInputDecoration(
+                                      'Пароль',
+                                      suffixIcon: IconButton(
+                                        icon: Icon(
+                                          _passwordVisible ? Icons.visibility : Icons.visibility_off,
+                                          color: _secondaryTextColor,
                                         ),
-                                      ),
-                                      obscureText: !_passwordVisible,
-                                      autofillHints: const [AutofillHints.password],
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Введите пароль';
-                                        }
-                                        return null;
-                                      },
-                                      textInputAction: TextInputAction.done,
-                                    ),
-                                    const SizedBox(height: 20),
-                                    // Login Button
-                                    Semantics(
-                                      label: 'Войти',
-                                      button: true,
-                                      child: AnimatedContainer(
-                                        duration: const Duration(milliseconds: 200),
-                                        child: ElevatedButton(
-                                          onPressed: _isLoading ? null : _login,
-                                          style: ElevatedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                                            backgroundColor: Colors.transparent,
-                                            shadowColor: Colors.transparent,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                          ),
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              gradient: const LinearGradient(
-                                                colors: [_primaryColor, Color(0xFFDE4B7C)],
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
-                                              ),
-                                              borderRadius: BorderRadius.circular(16),
-                                            ),
-                                            padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                                            child: const Text(
-                                              'Войти',
-                                              style: TextStyle(
-                                                color: _textColor,
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    // Register Link
-                                    Semantics(
-                                      label: 'Перейти к регистрации',
-                                      button: true,
-                                      child: TextButton(
                                         onPressed: () {
-                                          Navigator.pushReplacementNamed(context, '/register');
+                                          setState(() {
+                                            _passwordVisible = !_passwordVisible;
+                                          });
                                         },
-                                        child: const Text(
-                                          'Нет аккаунта? Зарегистрироваться',
-                                          style: TextStyle(
-                                            color: _primaryColor,
-                                            fontSize: 14,
+                                      ),
+                                    ),
+                                    obscureText: !_passwordVisible,
+                                    autofillHints: const [AutofillHints.password],
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Введите пароль';
+                                      }
+                                      return null;
+                                    },
+                                    textInputAction: TextInputAction.done,
+                                  ),
+                                  const SizedBox(height: 20),
+                                  // Login Button
+                                  Semantics(
+                                    label: 'Войти',
+                                    button: true,
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      child: ElevatedButton(
+                                        onPressed: _isLoading ? null : _login,
+                                        style: ElevatedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                                          backgroundColor: Colors.transparent,
+                                          shadowColor: Colors.transparent,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                        ),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            gradient: const LinearGradient(
+                                              colors: [_primaryColor, Color(0xFFDE4B7C)],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                            borderRadius: BorderRadius.circular(16),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                                          child: const Text(
+                                            'Войти',
+                                            style: TextStyle(
+                                              color: _textColor,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  // Register Link
+                                  Semantics(
+                                    label: 'Перейти к регистрации',
+                                    button: true,
+                                    child: TextButton(
+                                      onPressed: () {
+                                        Navigator.pushNamed(context, '/register');
+                                      },
+                                      child: const Text(
+                                        'Нет аккаунта? Зарегистрироваться',
+                                        style: TextStyle(
+                                          color: _primaryColor,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-            // Loading Overlay
-            if (_isLoading)
-              Container(
-                color: Colors.black.withOpacity(0.5),
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(_primaryColor),
-                  ),
+          ),
+          // Loading Overlay
+          if (_isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.5),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(_primaryColor),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

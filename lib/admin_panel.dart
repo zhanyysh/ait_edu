@@ -908,7 +908,6 @@ class _QuestionsTabState extends State<QuestionsTab> {
       );
       return;
     }
-
     try {
       await _firestore
           .collection('test_types')
