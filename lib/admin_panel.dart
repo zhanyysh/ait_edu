@@ -165,14 +165,14 @@ class _TestTypesTabState extends State<TestTypesTab> {
               border: const OutlineInputBorder(),
               suffixIcon: _editingTestTypeId != null
                   ? IconButton(
-                      icon: const Icon(Icons.cancel),
-                      onPressed: () {
-                        setState(() {
-                          _editingTestTypeId = null;
-                          _testTypeNameController.clear();
-                        });
-                      },
-                    )
+                icon: const Icon(Icons.cancel),
+                onPressed: () {
+                  setState(() {
+                    _editingTestTypeId = null;
+                    _testTypeNameController.clear();
+                  });
+                },
+              )
                   : null,
             ),
           ),
@@ -425,7 +425,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
   final TextEditingController _numberOfQuestionsController = TextEditingController();
   List<String> _selectedLanguages = [];
   String? _editingCategoryId;
-  String _selectedTestType = 'multiple-choice'; // Новое поле для типа теста
 
   Future<void> _addOrUpdateCategory() async {
     if (_selectedTestTypeId == null) {
@@ -462,7 +461,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
           'points_per_question': pointsPerQuestion,
           'number_of_questions': numberOfQuestions,
           'languages': _selectedLanguages,
-          'test_type': _selectedTestType, // Сохраняем тип теста
           'created_at': DateTime.now().toIso8601String(),
           'created_by': FirebaseAuth.instance.currentUser?.uid,
         });
@@ -481,7 +479,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
           'points_per_question': pointsPerQuestion,
           'number_of_questions': numberOfQuestions,
           'languages': _selectedLanguages,
-          'test_type': _selectedTestType, // Обновляем тип теста
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Категория обновлена')),
@@ -495,7 +492,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
       setState(() {
         _selectedLanguages = [];
         _editingCategoryId = null;
-        _selectedTestType = 'multiple-choice';
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -562,7 +558,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
                     _pointsPerQuestionController.clear();
                     _numberOfQuestionsController.clear();
                     _selectedLanguages = [];
-                    _selectedTestType = 'multiple-choice';
                   });
                 },
                 decoration: const InputDecoration(
@@ -606,33 +601,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
                 labelText: 'Количество вопросов',
                 border: OutlineInputBorder(),
               ),
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedTestType,
-              decoration: const InputDecoration(
-                labelText: 'Тип теста',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: 'multiple-choice',
-                  child: Text('Multiple Choice'),
-                ),
-                DropdownMenuItem(
-                  value: 'reading',
-                  child: Text('Reading'),
-                ),
-                DropdownMenuItem(
-                  value: 'writing',
-                  child: Text('Writing'),
-                ),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _selectedTestType = value!;
-                });
-              },
             ),
             const SizedBox(height: 16),
             StreamBuilder<QuerySnapshot>(
@@ -715,11 +683,9 @@ class _CategoriesTabState extends State<CategoriesTab> {
                       final pointsPerQuestion = category['points_per_question'] as double;
                       final numberOfQuestions = category['number_of_questions'] as int;
                       final languages = List<String>.from(category['languages']);
-                      final testType = category['test_type'] as String? ?? 'multiple-choice';
                       return ListTile(
                         title: Text(categoryName),
                         subtitle: Text(
-                          'Тип: $testType\n'
                           'Длительность: $duration мин, Баллы: $pointsPerQuestion, Вопросов: $numberOfQuestions, Языки: ${languages.join(', ')}',
                         ),
                         trailing: Row(
@@ -735,7 +701,6 @@ class _CategoriesTabState extends State<CategoriesTab> {
                                   _pointsPerQuestionController.text = pointsPerQuestion.toString();
                                   _numberOfQuestionsController.text = numberOfQuestions.toString();
                                   _selectedLanguages = languages;
-                                  _selectedTestType = testType;
                                 });
                               },
                             ),
@@ -770,7 +735,6 @@ class _QuestionsTabState extends State<QuestionsTab> {
   String? _selectedTestTypeId;
   String? _selectedCategoryId;
   String? _selectedLanguage;
-  String? _selectedTestType;
   final TextEditingController _questionTextController = TextEditingController();
   final List<TextEditingController> _optionControllers = [
     TextEditingController(),
@@ -781,12 +745,6 @@ class _QuestionsTabState extends State<QuestionsTab> {
   String? _correctAnswer;
   final TextEditingController _explanationController = TextEditingController();
   String? _editingQuestionId;
-  // Поля для reading
-  String? _selectedTextId;
-  final TextEditingController _readingTextTitleController = TextEditingController();
-  final TextEditingController _readingTextContentController = TextEditingController();
-  // Поля для writing
-  final TextEditingController _writingAnswerController = TextEditingController();
 
   Future<void> _addOrUpdateQuestion() async {
     if (_selectedTestTypeId == null || _selectedCategoryId == null || _selectedLanguage == null) {
@@ -796,56 +754,17 @@ class _QuestionsTabState extends State<QuestionsTab> {
       return;
     }
 
-    if (_questionTextController.text.isEmpty) {
+    if (_questionTextController.text.isEmpty ||
+        _optionControllers.any((controller) => controller.text.isEmpty) ||
+        _correctAnswer == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Введите текст вопроса')),
+        const SnackBar(content: Text('Заполните все поля')),
       );
       return;
     }
 
     try {
-      Map<String, dynamic> questionData = {
-        'text': _questionTextController.text,
-        'explanation': _explanationController.text,
-        'language': _selectedLanguage,
-        'created_at': DateTime.now().toIso8601String(),
-        'created_by': FirebaseAuth.instance.currentUser?.uid,
-      };
-
-      if (_selectedTestType == 'multiple-choice') {
-        if (_optionControllers.any((controller) => controller.text.isEmpty) || _correctAnswer == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Заполните все варианты ответа и выберите правильный')),
-          );
-          return;
-        }
-        questionData['options'] = _optionControllers.map((controller) => controller.text).toList();
-        questionData['correct_answer'] = _correctAnswer;
-      } else if (_selectedTestType == 'reading') {
-        if (_selectedTextId == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Выберите текст для вопроса')),
-          );
-          return;
-        }
-        if (_optionControllers.any((controller) => controller.text.isEmpty) || _correctAnswer == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Заполните все варианты ответа и выберите правильный')),
-          );
-          return;
-        }
-        questionData['reading_text_id'] = _selectedTextId;
-        questionData['options'] = _optionControllers.map((controller) => controller.text).toList();
-        questionData['correct_answer'] = _correctAnswer;
-      } else if (_selectedTestType == 'writing') {
-        if (_writingAnswerController.text.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Введите шаблон ответа для writing')),
-          );
-          return;
-        }
-        questionData['answer_text'] = _writingAnswerController.text;
-      }
+      final options = _optionControllers.map((controller) => controller.text).toList();
 
       if (_editingQuestionId == null) {
         await _firestore
@@ -854,7 +773,15 @@ class _QuestionsTabState extends State<QuestionsTab> {
             .collection('categories')
             .doc(_selectedCategoryId)
             .collection('questions')
-            .add(questionData);
+            .add({
+          'text': _questionTextController.text,
+          'options': options,
+          'correct_answer': _correctAnswer,
+          'explanation': _explanationController.text,
+          'language': _selectedLanguage,
+          'created_at': DateTime.now().toIso8601String(),
+          'created_by': FirebaseAuth.instance.currentUser?.uid,
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Вопрос добавлен')),
         );
@@ -866,59 +793,30 @@ class _QuestionsTabState extends State<QuestionsTab> {
             .doc(_selectedCategoryId)
             .collection('questions')
             .doc(_editingQuestionId)
-            .update(questionData);
+            .update({
+          'text': _questionTextController.text,
+          'options': options,
+          'correct_answer': _correctAnswer,
+          'explanation': _explanationController.text,
+          'language': _selectedLanguage,
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Вопрос обновлён')),
         );
       }
 
-      _resetQuestionForm();
+      _questionTextController.clear();
+      for (var controller in _optionControllers) {
+        controller.clear();
+      }
+      _correctAnswer = null;
+      _explanationController.clear();
+      setState(() {
+        _editingQuestionId = null;
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка: $e')),
-      );
-    }
-  }
-
-  Future<void> _addReadingText() async {
-    if (_selectedTestTypeId == null || _selectedCategoryId == null || _selectedLanguage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Выберите вид теста, категорию и язык')),
-      );
-      return;
-    }
-
-    if (_readingTextContentController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Введите текст')),
-      );
-      return;
-    }
-
-    try {
-      await _firestore
-          .collection('test_types')
-          .doc(_selectedTestTypeId)
-          .collection('categories')
-          .doc(_selectedCategoryId)
-          .collection('texts')
-          .add({
-        'title': _readingTextTitleController.text.isEmpty
-            ? null
-            : _readingTextTitleController.text,
-        'content': _readingTextContentController.text,
-        'language': _selectedLanguage,
-        'created_at': DateTime.now().toIso8601String(),
-        'created_by': FirebaseAuth.instance.currentUser?.uid,
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Текст добавлен')),
-      );
-      _readingTextTitleController.clear();
-      _readingTextContentController.clear();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка при добавлении текста: $e')),
       );
     }
   }
@@ -941,40 +839,6 @@ class _QuestionsTabState extends State<QuestionsTab> {
         SnackBar(content: Text('Ошибка при удалении: $e')),
       );
     }
-  }
-
-  Future<void> _deleteReadingText(String textId) async {
-    try {
-      await _firestore
-          .collection('test_types')
-          .doc(_selectedTestTypeId)
-          .collection('categories')
-          .doc(_selectedCategoryId)
-          .collection('texts')
-          .doc(textId)
-          .delete();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Текст удалён')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка при удалении текста: $e')),
-      );
-    }
-  }
-
-  void _resetQuestionForm() {
-    _questionTextController.clear();
-    for (var controller in _optionControllers) {
-      controller.clear();
-    }
-    _correctAnswer = null;
-    _explanationController.clear();
-    _writingAnswerController.clear();
-    _selectedTextId = null;
-    setState(() {
-      _editingQuestionId = null;
-    });
   }
 
   @override
@@ -1014,10 +878,13 @@ class _QuestionsTabState extends State<QuestionsTab> {
                       _selectedTestTypeId = value;
                       _selectedCategoryId = null;
                       _selectedLanguage = null;
-                      _selectedTestType = null;
-                      _resetQuestionForm();
-                      _readingTextTitleController.clear();
-                      _readingTextContentController.clear();
+                      _editingQuestionId = null;
+                      _questionTextController.clear();
+                      for (var controller in _optionControllers) {
+                        controller.clear();
+                      }
+                      _correctAnswer = null;
+                      _explanationController.clear();
                     });
                   },
                   decoration: const InputDecoration(
@@ -1049,24 +916,27 @@ class _QuestionsTabState extends State<QuestionsTab> {
                       return DropdownMenuItem<String>(
                         value: category.id,
                         child: Text(category['name']),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedCategoryId = value;
-                      _selectedLanguage = null;
-                      _selectedTestType = null;
-                      _resetQuestionForm();
-                      _readingTextTitleController.clear();
-                      _readingTextContentController.clear();
-                    });
-                  },
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                  ),
-                );
-              },
-            ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedCategoryId = value;
+                        _selectedLanguage = null;
+                        _editingQuestionId = null;
+                        _questionTextController.clear();
+                        for (var controller in _optionControllers) {
+                          controller.clear();
+                        }
+                        _correctAnswer = null;
+                        _explanationController.clear();
+                      });
+                    },
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                    ),
+                  );
+                },
+              ),
             const SizedBox(height: 16),
             if (_selectedCategoryId != null)
               StreamBuilder<DocumentSnapshot>(
@@ -1085,316 +955,168 @@ class _QuestionsTabState extends State<QuestionsTab> {
                   }
                   final category = snapshot.data!;
                   final languages = List<String>.from(category['languages']);
-                  _selectedTestType = category['test_type'] as String? ?? 'multiple-choice';
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      DropdownButtonFormField<String>(
-                        value: _selectedLanguage,
-                        hint: const Text('Выберите язык'),
-                        items: languages.map((lang) {
-                          return DropdownMenuItem<String>(
-                            value: lang,
-                            child: Text(lang),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedLanguage = value;
-                            _resetQuestionForm();
-                            _readingTextTitleController.clear();
-                            _readingTextContentController.clear();
-                          });
-                        },
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      if (_selectedTestType == 'reading') ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Добавить текст для чтения',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _readingTextTitleController,
-                          decoration: const InputDecoration(
-                            labelText: 'Заголовок текста (необязательно)',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _readingTextContentController,
-                          decoration: const InputDecoration(
-                            labelText: 'Содержимое текста',
-                            border: OutlineInputBorder(),
-                          ),
-                          maxLines: 5,
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _addReadingText,
-                          child: const Text('Добавить текст'),
-                        ),
-                        const SizedBox(height: 16),
-                        StreamBuilder<QuerySnapshot>(
-                          stream: _firestore
-                              .collection('test_types')
-                              .doc(_selectedTestTypeId)
-                              .collection('categories')
-                              .doc(_selectedCategoryId)
-                              .collection('texts')
-                              .where('language', isEqualTo: _selectedLanguage)
-                              .snapshots(),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) {
-                              return Text('Ошибка: ${snapshot.error}');
-                            }
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return const Center(child: CircularProgressIndicator());
-                            }
-                            final texts = snapshot.data!.docs;
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Существующие тексты:',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(height: 8),
-                                ...texts.map((text) {
-                                  final textId = text.id;
-                                  final title = text['title'] as String? ?? 'Без заголовка';
-                                  final content = text['content'] as String;
-                                  return ListTile(
-                                    title: Text(title),
-                                    subtitle: Text(
-                                      content.length > 50
-                                          ? '${content.substring(0, 50)}...'
-                                          : content,
-                                    ),
-                                    trailing: IconButton(
-                                      icon: const Icon(Icons.delete),
-                                      onPressed: () => _deleteReadingText(textId),
-                                    ),
-                                  );
-                                }).toList(),
-                              ],
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        StreamBuilder<QuerySnapshot>(
-                          stream: _firestore
-                              .collection('test_types')
-                              .doc(_selectedTestTypeId)
-                              .collection('categories')
-                              .doc(_selectedCategoryId)
-                              .collection('texts')
-                              .where('language', isEqualTo: _selectedLanguage)
-                              .snapshots(),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) {
-                              return Text('Ошибка: ${snapshot.error}');
-                            }
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return const CircularProgressIndicator();
-                            }
-                            final texts = snapshot.data!.docs;
-                            return DropdownButtonFormField<String>(
-                              value: _selectedTextId,
-                              hint: const Text('Выберите текст для вопроса'),
-                              items: texts.map((text) {
-                                final title = text['title'] as String? ?? 'Без заголовка';
-                                return DropdownMenuItem<String>(
-                                  value: text.id,
-                                  child: Text(title),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedTextId = value;
-                                });
-                              },
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _questionTextController,
-                        decoration: const InputDecoration(
-                          labelText: 'Текст вопроса',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      if (_selectedTestType == 'multiple-choice' || _selectedTestType == 'reading') ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Варианты ответа:',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        ..._optionControllers.asMap().entries.map((entry) {
-                          int index = entry.key;
-                          TextEditingController controller = entry.value;
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4.0),
-                            child: TextField(
-                              controller: controller,
-                              decoration: InputDecoration(
-                                labelText: 'Вариант ${index + 1}',
-                                border: const OutlineInputBorder(),
-                              ),
-                              onChanged: (value) {
-                                setState(() {
-                                  _correctAnswer = null;
-                                });
-                              },
-                            ),
-                          );
-                        }).toList(),
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String>(
-                          value: _correctAnswer,
-                          hint: const Text('Правильный ответ'),
-                          items: _optionControllers
-                              .map((controller) => controller.text)
-                              .where((text) => text.isNotEmpty)
-                              .map((option) {
-                            return DropdownMenuItem<String>(
-                              value: option,
-                              child: Text(option),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              _correctAnswer = value;
-                            });
-                          },
-                          decoration: const InputDecoration(
-                            labelText: 'Правильный ответ',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ],
-                      if (_selectedTestType == 'writing') ...[
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _writingAnswerController,
-                          decoration: const InputDecoration(
-                            labelText: 'Шаблон ответа',
-                            border: OutlineInputBorder(),
-                          ),
-                          maxLines: 3,
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _explanationController,
-                        decoration: const InputDecoration(
-                          labelText: 'Объяснение',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _addOrUpdateQuestion,
-                        child: Text(_editingQuestionId == null ? 'Добавить' : 'Обновить'),
-                      ),
-                      const SizedBox(height: 16),
-                      StreamBuilder<QuerySnapshot>(
-                        stream: _firestore
-                            .collection('test_types')
-                            .doc(_selectedTestTypeId)
-                            .collection('categories')
-                            .doc(_selectedCategoryId)
-                            .collection('questions')
-                            .where('language', isEqualTo: _selectedLanguage)
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          if (snapshot.hasError) {
-                            return Text('Ошибка: ${snapshot.error}');
-                          }
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator());
-                          }
-                          final questions = snapshot.data!.docs;
-                          return ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: questions.length,
-                            itemBuilder: (context, index) {
-                              final question = questions[index];
-                              final questionId = question.id;
-                              final questionText = question['text'] as String;
-                              final options = question['options'] != null
-                                  ? List<String>.from(question['options'])
-                                  : null;
-                              final correctAnswer = question['correct_answer'] as String?;
-                              final explanation = question['explanation'] as String? ?? 'Нет объяснения';
-                              final readingTextId = question['reading_text_id'] as String?;
-                              final answerText = (question.data() as Map<String, dynamic>).containsKey('answer_text')
-                                  ? question['answer_text'] as String?
-                                  : null;
-
-                              return ListTile(
-                                title: Text(questionText),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    if (options != null)
-                                      Text('Варианты: ${options.join(', ')}'),
-                                    if (correctAnswer != null)
-                                      Text('Правильный: $correctAnswer'),
-                                    if (readingTextId != null)
-                                      Text('Текст ID: $readingTextId'),
-                                    if (answerText != null)
-                                      Text('Шаблон ответа: $answerText'),
-                                    Text('Объяснение: $explanation'),
-                                  ],
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.edit),
-                                      onPressed: () {
-                                        setState(() {
-                                          _editingQuestionId = questionId;
-                                          _questionTextController.text = questionText;
-                                          if (options != null) {
-                                            for (int i = 0; i < _optionControllers.length; i++) {
-                                              _optionControllers[i].text = options.length > i ? options[i] : '';
-                                            }
-                                          }
-                                          _correctAnswer = correctAnswer;
-                                          _explanationController.text = explanation;
-                                          _selectedTextId = readingTextId;
-                                          _writingAnswerController.text = answerText ?? '';
-                                        });
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete),
-                                      onPressed: () => _deleteQuestion(questionId),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ],
+                  return DropdownButtonFormField<String>(
+                    value: _selectedLanguage,
+                    hint: const Text('Выберите язык'),
+                    items: languages.map((lang) {
+                      return DropdownMenuItem<String>(
+                        value: lang,
+                        child: Text(lang),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedLanguage = value;
+                        _editingQuestionId = null;
+                        _questionTextController.clear();
+                        for (var controller in _optionControllers) {
+                          controller.clear();
+                        }
+                        _correctAnswer = null;
+                        _explanationController.clear();
+                      });
+                    },
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                    ),
                   );
                 },
               ),
+            const SizedBox(height: 16),
+            if (_selectedLanguage != null) ...[
+              TextField(
+                controller: _questionTextController,
+                decoration: const InputDecoration(
+                  labelText: 'Текст вопроса',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Варианты ответа:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              ..._optionControllers.asMap().entries.map((entry) {
+                int index = entry.key;
+                TextEditingController controller = entry.value;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: TextField(
+                    controller: controller,
+                    decoration: InputDecoration(
+                      labelText: 'Вариант ${index + 1}',
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _correctAnswer = null;
+                      });
+                    },
+                  ),
+                );
+              }).toList(),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _correctAnswer,
+                hint: const Text('Правильный ответ'),
+                items: _optionControllers
+                    .map((controller) => controller.text)
+                    .where((text) => text.isNotEmpty)
+                    .map((option) {
+                  return DropdownMenuItem<String>(
+                    value: option,
+                    child: Text(option),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _correctAnswer = value;
+                  });
+                },
+                decoration: const InputDecoration(
+                  labelText: 'Правильный ответ',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _explanationController,
+                decoration: const InputDecoration(
+                  labelText: 'Объяснение',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _addOrUpdateQuestion,
+                child: Text(_editingQuestionId == null ? 'Добавить' : 'Обновить'),
+              ),
+              const SizedBox(height: 16),
+              StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('test_types')
+                    .doc(_selectedTestTypeId)
+                    .collection('categories')
+                    .doc(_selectedCategoryId)
+                    .collection('questions')
+                    .where('language', isEqualTo: _selectedLanguage)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Text('Ошибка: ${snapshot.error}');
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final questions = snapshot.data!.docs;
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: questions.length,
+                    itemBuilder: (context, index) {
+                      final question = questions[index];
+                      final questionId = question.id;
+                      final questionText = question['text'] as String;
+                      final options = List<String>.from(question['options']);
+                      final correctAnswer = question['correct_answer'] as String;
+                      final explanation = question['explanation'] as String? ?? 'Нет объяснения';
+                      return ListTile(
+                        title: Text(questionText),
+                        subtitle: Text(
+                          'Варианты: ${options.join(', ')}\n'
+                              'Правильный: $correctAnswer\n'
+                              'Объяснение: $explanation',
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit),
+                              onPressed: () {
+                                setState(() {
+                                  _editingQuestionId = questionId;
+                                  _questionTextController.text = questionText;
+                                  for (int i = 0; i < _optionControllers.length; i++) {
+                                    _optionControllers[i].text = options[i];
+                                  }
+                                  _correctAnswer = correctAnswer;
+                                  _explanationController.text = explanation;
+                                });
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete),
+                              onPressed: () => _deleteQuestion(questionId),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
           ],
         ),
       ),
@@ -1713,8 +1435,8 @@ class _ContestsTabState extends State<ContestsTab> {
                           title: Text('Контест: $testTypeName ($language)'),
                           subtitle: Text(
                             'Дата: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(date)}\n'
-                            'Тип: ${isRestricted ? 'Ограниченный' : 'Открытый'}\n'
-                            'Участников: ${participants.length}',
+                                'Тип: ${isRestricted ? 'Ограниченный' : 'Открытый'}\n'
+                                'Участников: ${participants.length}',
                           ),
                           trailing: IconButton(
                             icon: const Icon(Icons.delete),
@@ -2209,8 +1931,8 @@ class _StudyMaterialsTabState extends State<StudyMaterialsTab> {
                                           title: Text(questionText),
                                           subtitle: Text(
                                             'Варианты: ${options.join(', ')}\n'
-                                            'Правильный: $correctAnswer\n'
-                                            'Объяснение: $explanation',
+                                                'Правильный: $correctAnswer\n'
+                                                'Объяснение: $explanation',
                                           ),
                                           trailing: Row(
                                             mainAxisSize: MainAxisSize.min,

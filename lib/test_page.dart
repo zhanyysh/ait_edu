@@ -2,9 +2,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'custom_animated_button.dart';
-import 'dart:math';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:math';
 
 class TestPage extends StatefulWidget {
   final String testTypeId;
@@ -136,6 +135,7 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
 
       await _loadQuestionsForCurrentCategory();
     } catch (e) {
+      debugPrint('TestPage: Ошибка загрузки категорий: $e');
       setState(() {
         _isLoading = false;
       });
@@ -155,10 +155,11 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
 
     try {
       DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
+      Map<String, dynamic>? categoryData = categoryDoc.data() as Map<String, dynamic>?;
       String categoryId = categoryDoc.id;
-      _testType = categoryDoc['test_type'] as String? ?? 'multiple-choice';
-      _duration = (categoryDoc['duration'] as num?)?.toDouble() ?? 0.0;
-      int numberOfQuestions = (categoryDoc['number_of_questions'] as int?) ?? 30;
+      _testType = categoryData?['test_type'] as String? ?? 'multiple-choice';
+      _duration = (categoryData?['duration'] as num?)?.toDouble() ?? 0.0;
+      int numberOfQuestions = (categoryData?['number_of_questions'] as int?) ?? 30;
       _timeRemaining = (_duration * 60).toInt();
 
       if (_testType == 'reading') {
@@ -191,8 +192,9 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
           .get();
 
       List<DocumentSnapshot> questions = questionsSnapshot.docs.where((doc) {
+        Map<String, dynamic>? data = doc.data() as Map<String, dynamic>?;
         if (_testType == 'multiple-choice' || _testType == 'reading') {
-          return doc['options'] != null && (doc['options'] as List).isNotEmpty;
+          return data?['options'] != null && (data!['options'] as List).isNotEmpty;
         }
         return true;
       }).toList();
@@ -225,6 +227,7 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
       _animationController.reset();
       _animationController.forward();
     } catch (e) {
+      debugPrint('TestPage: Ошибка загрузки вопросов: $e');
       setState(() {
         _isLoading = false;
       });
@@ -268,45 +271,57 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
       return;
     }
 
-    DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
-    String categoryName = categoryDoc['name'] as String? ?? 'Неизвестная категория';
-    double pointsPerQuestion = (categoryDoc['points_per_question'] as num?)?.toDouble() ?? 0.0;
+    try {
+      DocumentSnapshot categoryDoc = _categories[_currentCategoryIndex];
+      Map<String, dynamic>? categoryData = categoryDoc.data() as Map<String, dynamic>?;
+      String categoryName = categoryData?['name'] as String? ?? 'Неизвестная категория';
+      double pointsPerQuestion = (categoryData?['points_per_question'] as num?)?.toDouble() ?? 0.0;
 
-    _categoryNames.add(categoryName);
-    _pointsPerQuestionByCategory.add(pointsPerQuestion);
-    _questionsPerCategory.add(_questions.length);
-    _testTypesByCategory.add(_testType);
+      _categoryNames.add(categoryName);
+      _pointsPerQuestionByCategory.add(pointsPerQuestion);
+      _questionsPerCategory.add(_questions.length);
+      _testTypesByCategory.add(_testType);
 
-    int categoryCorrectAnswers = 0;
-    for (int i = 0; i < _questions.length; i++) {
-      DocumentSnapshot question = _questions[i];
-      String? correctAnswer = question['correct_answer'] as String?;
-      String? readingTextId = question['reading_text_id'] as String?;
-      dynamic userAnswer = _selectedAnswers[i];
-      _allQuestions.add(question);
-      _allCorrectAnswers.add(correctAnswer ?? '');
-      _allSelectedAnswers.add(userAnswer);
+      int categoryCorrectAnswers = 0;
+      for (int i = 0; i < _questions.length; i++) {
+        DocumentSnapshot question = _questions[i];
+        Map<String, dynamic>? questionData = question.data() as Map<String, dynamic>?;
+        String? correctAnswer = questionData?['correct_answer'] as String?;
+        String? readingTextId = questionData?['reading_text_id'] as String?;
+        dynamic userAnswer = _selectedAnswers[i];
+        _allQuestions.add(question);
+        _allCorrectAnswers.add(correctAnswer ?? '');
+        _allSelectedAnswers.add(userAnswer);
 
-      if (_testType == 'multiple-choice' || _testType == 'reading') {
-        final options = (question['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
-        String? userAnswerText = userAnswer != null && options.isNotEmpty ? options[userAnswer as int] : null;
-        if (userAnswerText == correctAnswer) {
-          _correctAnswers++;
-          categoryCorrectAnswers++;
+        if (_testType == 'multiple-choice' || _testType == 'reading') {
+          final options = (questionData?['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+          String? userAnswerText;
+          if (userAnswer != null && options.isNotEmpty && userAnswer is int && userAnswer < options.length) {
+            userAnswerText = options[userAnswer];
+          }
+          if (userAnswerText != null && userAnswerText == correctAnswer) {
+            _correctAnswers++;
+            categoryCorrectAnswers++;
+          }
         }
       }
-    }
 
-    double categoryPoints = categoryCorrectAnswers * pointsPerQuestion;
-    _totalPoints += categoryPoints;
+      double categoryPoints = categoryCorrectAnswers * pointsPerQuestion;
+      _totalPoints += categoryPoints;
 
-    if (_currentCategoryIndex + 1 < _categories.length) {
-      setState(() {
-        _currentCategoryIndex++;
-      });
-      await _loadQuestionsForCurrentCategory();
-    } else {
-      _finishEntireTest();
+      if (_currentCategoryIndex + 1 < _categories.length) {
+        setState(() {
+          _currentCategoryIndex++;
+        });
+        await _loadQuestionsForCurrentCategory();
+      } else {
+        _finishEntireTest();
+      }
+    } catch (e) {
+      debugPrint('TestPage: Ошибка завершения категории: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка завершения категории: $e')));
+      }
     }
   }
 
@@ -333,22 +348,25 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
 
     try {
       DocumentSnapshot testTypeDoc = await _firestore.collection('test_types').doc(widget.testTypeId).get();
-      String testFailures = testTypeDoc.exists ? (testTypeDoc['name'] as String? ?? 'Неизвестный тест') : 'Неизвестный тест';
+      String testName = testTypeDoc.exists ? (testTypeDoc['name'] as String? ?? 'Неизвестный тест') : 'Неизвестный тест';
 
       String? contestName;
       if (widget.contestId != null) {
         DocumentSnapshot contestDoc = await _firestore.collection('contests').doc(widget.contestId).get();
         if (contestDoc.exists) {
-          contestName = 'Контест: $testFailures (${contestDoc['language'] ?? 'Не указан'})';
+          contestName = 'Контест: $testName (${contestDoc['language'] ?? 'Не указан'})';
         }
       }
 
       await _firestore.collection('users').doc(user.uid).collection('test_history').doc(_testId).set({
-        'test_type': testFailures,
+        'test_type': testName,
         'date': DateTime.now().toIso8601String(),
         'is_contest': widget.contestId != null,
         'contest_id': widget.contestId,
-        'contest_name': contestName ?? testFailures,
+        'contest_name': contestName ?? testName,
+        'total_points': _totalPoints,
+        'correct_answers': _correctAnswers,
+        'total_questions': _allQuestions.length,
       });
 
       for (int categoryIndex = 0; categoryIndex < _categoryNames.length; categoryIndex++) {
@@ -363,18 +381,19 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
         List<Map<String, dynamic>> answers = [];
         for (int i = startIndex; i < endIndex; i++) {
           DocumentSnapshot question = _allQuestions[i];
-          String? correctAnswer = _allCorrectAnswers[i];
+          Map<String, dynamic>? questionData = question.data() as Map<String, dynamic>?;
+          String? correctAnswer = questionData?['correct_answer'] as String?;
           dynamic userAnswer = _allSelectedAnswers[i];
-          String? readingTextId = question['reading_text_id'] as String?;
-          String? answerText =
-          (question.data() as Map<String, dynamic>?)?.containsKey('answer_text') == true
-              ? question['answer_text'] as String?
-              : null;
+          String? readingTextId = questionData?['reading_text_id'] as String?;
+          String? answerText = questionData?.containsKey('answer_text') == true ? questionData!['answer_text'] as String? : null;
 
           if (categoryTestType == 'multiple-choice' || categoryTestType == 'reading') {
-            final options = (question['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
-            String? userAnswerText = userAnswer != null && options.isNotEmpty ? options[userAnswer as int] : null;
-            if (userAnswerText == correctAnswer) {
+            final options = (questionData?['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+            String? userAnswerText;
+            if (userAnswer != null && options.isNotEmpty && userAnswer is int && userAnswer < options.length) {
+              userAnswerText = options[userAnswer];
+            }
+            if (userAnswerText != null && userAnswerText == correctAnswer) {
               categoryCorrectAnswers++;
             }
             answers.add({
@@ -586,13 +605,17 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
 
                                   int categoryCorrectAnswers = 0;
                                   for (int i = startIndex; i < endIndex; i++) {
-                                    String correctAnswer = _allCorrectAnswers[i];
+                                    Map<String, dynamic>? questionData = _allQuestions[i].data() as Map<String, dynamic>?;
+                                    String? correctAnswer = questionData?['correct_answer'] as String?;
                                     dynamic userAnswer = _allSelectedAnswers[i];
                                     if (categoryTestType == 'multiple-choice' || categoryTestType == 'reading') {
-                                      final options = (_allQuestions[i]['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
-                                      String? userAnswerText =
-                                      userAnswer != null && options.isNotEmpty ? options[userAnswer as int] : null;
-                                      if (userAnswerText == correctAnswer) {
+                                      final options =
+                                          (questionData?['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+                                      String? userAnswerText;
+                                      if (userAnswer != null && options.isNotEmpty && userAnswer is int && userAnswer < options.length) {
+                                        userAnswerText = options[userAnswer];
+                                      }
+                                      if (userAnswerText != null && userAnswerText == correctAnswer) {
                                         categoryCorrectAnswers++;
                                       }
                                     }
@@ -632,26 +655,29 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                       ..._allQuestions.asMap().entries.where((entry) => entry.key >= startIndex && entry.key < endIndex).map((entry) {
                                         int index = entry.key;
                                         DocumentSnapshot question = entry.value;
-                                        String questionText = question['text'] as String? ?? 'Вопрос отсутствует';
-                                        String? correctAnswer = _allCorrectAnswers[index];
+                                        Map<String, dynamic>? questionData = question.data() as Map<String, dynamic>?;
+                                        String questionText = questionData?['text'] as String? ?? 'Вопрос отсутствует';
+                                        String? correctAnswer = questionData?['correct_answer'] as String?;
                                         dynamic userAnswer = _allSelectedAnswers[index];
-                                        String? readingTextId = question['reading_text_id'] as String?;
-                                        String? explanation = question['explanation'] as String? ?? 'Объяснение отсутствует';
+                                        String? readingTextId = questionData?['reading_text_id'] as String?;
+                                        String? explanation = questionData?['explanation'] as String? ?? 'Объяснение отсутствует';
                                         bool isCorrect = false;
 
                                         String? userAnswerText;
                                         if (categoryTestType == 'multiple-choice' || categoryTestType == 'reading') {
-                                          final options = (question['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
-                                          userAnswerText = userAnswer != null && options.isNotEmpty ? options[userAnswer as int] : null;
-                                          isCorrect = userAnswerText == correctAnswer;
+                                          final options = (questionData?['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+                                          if (userAnswer != null && options.isNotEmpty && userAnswer is int && userAnswer < options.length) {
+                                            userAnswerText = options[userAnswer];
+                                          }
+                                          isCorrect = userAnswerText != null && userAnswerText == correctAnswer;
                                         } else if (categoryTestType == 'writing') {
                                           userAnswerText = userAnswer as String? ?? 'Не введено';
                                         }
 
                                         String? readingTextContent;
                                         String? readingTextTitle;
-                                        if (readingTextId != null) {
-                                          final text = _readingTexts[readingTextId] ?? {'title': null, 'content': 'Текст не найден'};
+                                        if (readingTextId != null && _readingTexts.containsKey(readingTextId)) {
+                                          final text = _readingTexts[readingTextId]!;
                                           readingTextTitle = text['title'] as String?;
                                           readingTextContent = text['content'] as String? ?? 'Текст отсутствует';
                                         }
@@ -669,7 +695,7 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                if (readingTextId != null) ...[
+                                                if (readingTextId != null && readingTextContent != null) ...[
                                                   Text(
                                                     readingTextTitle ?? 'Текст',
                                                     style: GoogleFonts.orbitron(
@@ -680,7 +706,7 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                                   ),
                                                   const SizedBox(height: 8),
                                                   Text(
-                                                    readingTextContent!,
+                                                    readingTextContent,
                                                     style: TextStyle(fontSize: 14, color: _secondaryTextColor),
                                                   ),
                                                   const SizedBox(height: 16),
@@ -727,18 +753,33 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                   );
                                 }).toList(),
                                 const SizedBox(height: 20),
-                                CustomAnimatedButton(
-                                  onPressed: () {
-                                    Navigator.pop(context);
-                                  },
-                                  gradientColors: _buttonGradientColors,
-                                  label: 'Вернуться',
-                                  currentTheme: widget.currentTheme,
-                                  isHeader: false, // Non-header button
+                                Center(
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                      backgroundColor: _primaryColor,
+                                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'Вернуться',
+                                      style: GoogleFonts.orbitron(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ] else ...[
                                 Builder(builder: (BuildContext context) {
                                   final category = _categories[_currentCategoryIndex];
+                                  Map<String, dynamic>? categoryData = category.data() as Map<String, dynamic>?;
+                                  String categoryName = categoryData?['name'] as String? ?? 'Неизвестная категория';
 
                                   return Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -758,7 +799,7 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                               const SizedBox(width: 8),
                                               Expanded(
                                                 child: Text(
-                                                  'Категория: ${category['name']} (${_testType.toUpperCase()})',
+                                                  'Категория: $categoryName (${_testType.toUpperCase()})',
                                                   style: GoogleFonts.orbitron(
                                                     fontSize: 20,
                                                     fontWeight: FontWeight.bold,
@@ -814,9 +855,10 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                               ...textQuestions.asMap().entries.map((entry) {
                                                 int questionIndex = _questions.indexOf(entry.value);
                                                 DocumentSnapshot question = entry.value;
-                                                String questionText = question['text'] as String? ?? 'Вопрос отсутствует';
+                                                Map<String, dynamic>? questionData = question.data() as Map<String, dynamic>?;
+                                                String questionText = questionData?['text'] as String? ?? 'Вопрос отсутствует';
                                                 final options =
-                                                    (question['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+                                                    (questionData?['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
 
                                                 if (options.isEmpty) {
                                                   return Center(
@@ -865,7 +907,11 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                                               ),
                                                               value: optionIndex,
                                                               groupValue: _selectedAnswers[questionIndex] as int?,
-                                                              onChanged: (value) => _selectAnswer(questionIndex, value!),
+                                                              onChanged: (value) {
+                                                                if (value != null) {
+                                                                  _selectAnswer(questionIndex, value);
+                                                                }
+                                                              },
                                                               contentPadding: EdgeInsets.zero,
                                                               activeColor: _primaryColor,
                                                             ),
@@ -883,11 +929,12 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                         ..._questions.asMap().entries.map((entry) {
                                           int questionIndex = entry.key;
                                           DocumentSnapshot question = entry.value;
-                                          String questionText = question['text'] as String? ?? 'Вопрос отсутствует';
+                                          Map<String, dynamic>? questionData = question.data() as Map<String, dynamic>?;
+                                          String questionText = questionData?['text'] as String? ?? 'Вопрос отсутствует';
 
                                           if (_testType == 'multiple-choice') {
                                             final options =
-                                                (question['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
+                                                (questionData?['options'] as List?)?.map((option) => option.toString()).toList() ?? [];
 
                                             if (options.isEmpty) {
                                               return Center(
@@ -936,7 +983,11 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                                           ),
                                                           value: optionIndex,
                                                           groupValue: _selectedAnswers[questionIndex] as int?,
-                                                          onChanged: (value) => _selectAnswer(questionIndex, value!),
+                                                          onChanged: (value) {
+                                                            if (value != null) {
+                                                              _selectAnswer(questionIndex, value);
+                                                            }
+                                                          },
                                                           contentPadding: EdgeInsets.zero,
                                                           activeColor: _primaryColor,
                                                         ),
@@ -1006,12 +1057,23 @@ class TestPageState extends State<TestPage> with SingleTickerProviderStateMixin 
                                         }).toList(),
                                       const SizedBox(height: 20),
                                       Center(
-                                        child: CustomAnimatedButton(
+                                        child: ElevatedButton(
                                           onPressed: _finishCategory,
-                                          gradientColors: _buttonGradientColors,
-                                          label: 'Закончил категорию',
-                                          currentTheme: widget.currentTheme,
-                                          isHeader: true, // Header button
+                                          style: ElevatedButton.styleFrom(
+                                            foregroundColor: Colors.white,
+                                            backgroundColor: _primaryColor,
+                                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(15),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Закончил категорию',
+                                            style: GoogleFonts.orbitron(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ],
