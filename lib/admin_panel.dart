@@ -659,68 +659,63 @@ class _CategoriesTabState extends State<CategoriesTab> {
             ),
             const SizedBox(height: 16),
             Expanded(
-  child: StreamBuilder<QuerySnapshot>(
-    stream: _firestore
-        .collection('test_types')
-        .doc(_selectedTestTypeId)
-        .collection('categories')
-        .snapshots(),
-    builder: (context, snapshot) {
-      if (snapshot.hasError) {
-        return Text('Ошибка: ${snapshot.error}');
-      }
-      if (snapshot.connectionState == ConnectionState.waiting) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      final categories = snapshot.data!.docs;
-      return ListView.builder(
-        itemCount: categories.length,
-        itemBuilder: (context, index) {
-          final category = categories[index];
-          final categoryId = category.id;
-          final categoryName = category['name'] as String;
-          // Безопасное приведение int к double
-          final duration = (category['duration'] is int)
-              ? (category['duration'] as int).toDouble()
-              : category['duration'] as double;
-          final pointsPerQuestion = (category['points_per_question'] is int)
-              ? (category['points_per_question'] as int).toDouble()
-              : category['points_per_question'] as double;
-          final numberOfQuestions = category['number_of_questions'] as int;
-          final languages = List<String>.from(category['languages']);
-          return ListTile(
-            title: Text(categoryName),
-            subtitle: Text(
-              'Длительность: $duration мин, Баллы: $pointsPerQuestion, Вопросов: $numberOfQuestions, Языки: ${languages.join(', ')}',
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('test_types')
+                    .doc(_selectedTestTypeId)
+                    .collection('categories')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Text('Ошибка: ${snapshot.error}');
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final categories = snapshot.data!.docs;
+                  return ListView.builder(
+                    itemCount: categories.length,
+                    itemBuilder: (context, index) {
+                      final category = categories[index];
+                      final categoryId = category.id;
+                      final categoryName = category['name'] as String;
+                      final duration = category['duration'] as double;
+                      final pointsPerQuestion = category['points_per_question'] as double;
+                      final numberOfQuestions = category['number_of_questions'] as int;
+                      final languages = List<String>.from(category['languages']);
+                      return ListTile(
+                        title: Text(categoryName),
+                        subtitle: Text(
+                          'Длительность: $duration мин, Баллы: $pointsPerQuestion, Вопросов: $numberOfQuestions, Языки: ${languages.join(', ')}',
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit),
+                              onPressed: () {
+                                setState(() {
+                                  _editingCategoryId = categoryId;
+                                  _categoryNameController.text = categoryName;
+                                  _durationController.text = duration.toString();
+                                  _pointsPerQuestionController.text = pointsPerQuestion.toString();
+                                  _numberOfQuestionsController.text = numberOfQuestions.toString();
+                                  _selectedLanguages = languages;
+                                });
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete),
+                              onPressed: () => _deleteCategory(categoryId),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () {
-                    setState(() {
-                      _editingCategoryId = categoryId;
-                      _categoryNameController.text = categoryName;
-                      _durationController.text = duration.toString();
-                      _pointsPerQuestionController.text = pointsPerQuestion.toString();
-                      _numberOfQuestionsController.text = numberOfQuestions.toString();
-                      _selectedLanguages = languages;
-                    });
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: () => _deleteCategory(categoryId),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    },
-  ),
-),
           ],
         ],
       ),
@@ -810,15 +805,14 @@ class _QuestionsTabState extends State<QuestionsTab> {
         );
       }
 
-      // Очищаем только поля ввода, но сохраняем выбор теста, категории и языка
       _questionTextController.clear();
       for (var controller in _optionControllers) {
         controller.clear();
       }
+      _correctAnswer = null;
       _explanationController.clear();
       setState(() {
-        _correctAnswer = null;
-        _editingQuestionId = null; // Сбрасываем режим редактирования
+        _editingQuestionId = null;
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
