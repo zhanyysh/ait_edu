@@ -139,7 +139,7 @@ class _MyAppState extends State<MyApp> {
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegisterPage(),
         '/home': (context) => HomePage(onThemeChanged: updateTheme),
-        '/settings': (context) => SettingsPage(onThemeChanged: updateTheme),
+        '/settings': (context) => SettingsPage(onThemeChanged: updateTheme, currentTheme: 'light',),
         '/admin_panel': (context) => const AdminPanelPage(),
       },
     );

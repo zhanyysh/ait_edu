@@ -1,12 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'home.dart';
+import 'custom_animated_button.dart';
+import 'test_page.dart';
 
 class ContestsPage extends StatefulWidget {
-  const ContestsPage({super.key});
+  final String currentTheme;
+
+  const ContestsPage({super.key, required this.currentTheme});
 
   @override
   _ContestsPageState createState() => _ContestsPageState();
@@ -15,10 +18,28 @@ class ContestsPage extends StatefulWidget {
 class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderStateMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  String _currentTheme = 'light';
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+
+  // Color schemes for light and dark themes
+  List<Color> get _backgroundColors {
+    if (widget.currentTheme == 'light') {
+      return [Colors.white, const Color(0xFFF5E6FF)];
+    } else {
+      return [const Color(0xFF1A1A2E), const Color(0xFF16213E)];
+    }
+  }
+
+  Color get _textColor => widget.currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white;
+  Color get _secondaryTextColor => widget.currentTheme == 'light' ? Colors.grey[600]! : Colors.white70;
+  Color get _cardColor => widget.currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05);
+  Color get _borderColor => widget.currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent;
+  Color get _fieldFillColor => widget.currentTheme == 'light' ? Colors.grey[100]! : Colors.white.withOpacity(0.08);
+  static const List<Color> _buttonGradientColors = [
+    Color(0xFFFF6F61),
+    Color(0xFFDE4B7C),
+  ];
 
   @override
   void initState() {
@@ -34,14 +55,6 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
     _animationController.forward();
-    _loadTheme();
-  }
-
-  Future<void> _loadTheme() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _currentTheme = prefs.getString('theme') ?? 'light';
-    });
   }
 
   @override
@@ -55,11 +68,8 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Вы должны войти, чтобы зарегистрироваться',
-            style: TextStyle(color: _currentTheme == 'light' ? Colors.white : Colors.black),
-          ),
-          backgroundColor: _currentTheme == 'light' ? Colors.red : Colors.redAccent,
+          content: Text('Вы должны войти, чтобы зарегистрироваться', style: TextStyle(color: _textColor)),
+          backgroundColor: Colors.red,
         ),
       );
       return;
@@ -70,22 +80,24 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
       final bool? passwordCorrect = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          backgroundColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF2E004F),
+          backgroundColor: _cardColor,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           title: Text(
             'Введите пароль',
-            style: TextStyle(
-              color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+            style: GoogleFonts.orbitron(
+              color: _textColor,
               fontWeight: FontWeight.bold,
+              fontSize: 18,
+              letterSpacing: 1.2,
             ),
           ),
           content: TextField(
             controller: passwordController,
             decoration: InputDecoration(
               labelText: 'Пароль',
-              labelStyle: TextStyle(color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
+              labelStyle: TextStyle(color: _secondaryTextColor),
               filled: true,
-              fillColor: _currentTheme == 'light' ? Colors.grey[100] : Colors.white.withOpacity(0.08),
+              fillColor: _fieldFillColor,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(15),
                 borderSide: BorderSide.none,
@@ -96,22 +108,19 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(15),
-                borderSide: BorderSide(
-                  color: _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFF8E2DE2),
+                borderSide: const BorderSide(
+                  color: Color(0xFFFF6F61),
                   width: 2,
                 ),
               ),
             ),
             obscureText: true,
-            style: TextStyle(color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white),
+            style: TextStyle(color: _textColor),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text(
-                'Отмена',
-                style: TextStyle(color: _currentTheme == 'light' ? Colors.grey : Colors.white70),
-              ),
+              child: Text('Отмена', style: TextStyle(color: _secondaryTextColor)),
             ),
             TextButton(
               onPressed: () async {
@@ -121,11 +130,8 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(
-                        'Неверный пароль',
-                        style: TextStyle(color: _currentTheme == 'light' ? Colors.white : Colors.black),
-                      ),
-                      backgroundColor: _currentTheme == 'light' ? Colors.red : Colors.redAccent,
+                      content: Text('Неверный пароль', style: TextStyle(color: _textColor)),
+                      backgroundColor: Colors.red,
                     ),
                   );
                   Navigator.pop(context, false);
@@ -133,9 +139,7 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
               },
               child: Text(
                 'Подтвердить',
-                style: TextStyle(
-                  color: _currentTheme == 'light' ? const Color(0xFF4A90E2) : const Color(0xFF8E2DE2),
-                ),
+                style: TextStyle(color: Color(0xFFFF6F61)),
               ),
             ),
           ],
@@ -151,22 +155,16 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Вы зарегистрированы на контест',
-            style: TextStyle(color: _currentTheme == 'light' ? Colors.white : Colors.black),
-          ),
-          backgroundColor: _currentTheme == 'light' ? Colors.green : Colors.greenAccent,
+          content: Text('Вы зарегистрированы на контест', style: TextStyle(color: _textColor)),
+          backgroundColor: Colors.green,
         ),
       );
       setState(() {});
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Ошибка при регистрации: $e',
-            style: TextStyle(color: _currentTheme == 'light' ? Colors.white : Colors.black),
-          ),
-          backgroundColor: _currentTheme == 'light' ? Colors.red : Colors.redAccent,
+          content: Text('Ошибка при регистрации: $e', style: TextStyle(color: _textColor)),
+          backgroundColor: Colors.red,
         ),
       );
     }
@@ -190,11 +188,8 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
     if (hasCompleted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Вы уже прошли этот тест. Посмотрите результаты.',
-            style: TextStyle(color: _currentTheme == 'light' ? Colors.white : Colors.black),
-          ),
-          backgroundColor: _currentTheme == 'light' ? Colors.red : Colors.redAccent,
+          content: Text('Вы уже прошли этот контест. Посмотрите результаты.', style: TextStyle(color: _textColor)),
+          backgroundColor: Colors.red,
         ),
       );
       return;
@@ -207,6 +202,7 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
           testTypeId: testTypeId,
           language: language,
           contestId: contestId,
+          currentTheme: widget.currentTheme,
         ),
       ),
     );
@@ -237,270 +233,229 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
     final user = _auth.currentUser;
     final firestore = _firestore;
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 500),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: _currentTheme == 'light'
-              ? [Colors.white, const Color(0xFFF5E6FF)]
-              : [const Color(0xFF1A0033), const Color(0xFF2E004F)],
+          colors: _backgroundColors,
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: Text(
-                  'Контесты',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                    letterSpacing: 1.2,
-                  ),
-                ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: Text(
+            'Контесты',
+            style: GoogleFonts.orbitron(
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+              color: _textColor,
+              letterSpacing: 1.2,
+            ),
+          ),
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: _backgroundColors,
               ),
             ),
-            const SizedBox(height: 20),
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: firestore.collection('contests').snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Center(
+          ),
+          elevation: 0,
+          centerTitle: true,
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: StreamBuilder<QuerySnapshot>(
+            stream: firestore.collection('contests').snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text('Ошибка: ${snapshot.error}', style: TextStyle(color: _textColor)));
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Center(child: CircularProgressIndicator(color: _textColor));
+              }
+              final contests = snapshot.data!.docs;
+              if (contests.isEmpty) {
+                return Center(
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: SlideTransition(
+                      position: _slideAnimation,
                       child: Text(
-                        'Ошибка: ${snapshot.error}',
-                        style: TextStyle(
-                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                        ),
+                        'Нет доступных контестов',
+                        style: TextStyle(color: _textColor, fontSize: 16),
                       ),
-                    );
-                  }
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final contests = snapshot.data!.docs;
-                  if (contests.isEmpty) {
-                    return Center(
-                      child: FadeTransition(
-                        opacity: _fadeAnimation,
-                        child: SlideTransition(
-                          position: _slideAnimation,
-                          child: Text(
-                            'Нет доступных контестов',
-                            style: TextStyle(
-                              color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                  return ListView.builder(
-                    itemCount: contests.length,
-                    itemBuilder: (context, index) {
-                      final contest = contests[index];
-                      final contestId = contest.id;
-                      final testTypeId = contest['test_type_id'] as String;
-                      final contestData = contest.data() as Map<String, dynamic>;
-                      final language = contestData.containsKey('language')
-                          ? contestData['language'] as String? ?? 'Не указан'
-                          : 'Не указан';
-                      final date = DateTime.parse(contest['date']);
-                      final duration = contestData.containsKey('duration')
-                          ? contestData['duration'] as int? ?? 60
-                          : 60;
-                      final isRestricted = contest['is_restricted'] as bool;
-                      final participants = List<String>.from(contest['participants']);
-                      final isParticipant = user != null && participants.contains(user.uid);
-                      final now = DateTime.now();
-                      final isContestStarted = now.isAfter(date);
-                      final isContestEnded = now.isAfter(date.add(Duration(minutes: duration)));
+                    ),
+                  ),
+                );
+              }
+              return ListView.builder(
+                itemCount: contests.length,
+                itemBuilder: (context, index) {
+                  final contest = contests[index];
+                  final contestId = contest.id;
+                  final testTypeId = contest['test_type_id'] as String;
+                  final contestData = contest.data() as Map<String, dynamic>;
+                  final language = contestData.containsKey('language')
+                      ? contestData['language'] as String? ?? 'Не указан'
+                      : 'Не указан';
+                  final date = DateTime.parse(contest['date']);
+                  final duration = contestData.containsKey('duration')
+                      ? contestData['duration'] as int? ?? 60
+                      : 60;
+                  final isRestricted = contest['is_restricted'] as bool;
+                  final participants = List<String>.from(contest['participants']);
+                  final isParticipant = user != null && participants.contains(user.uid);
+                  final now = DateTime.now();
+                  final isContestStarted = now.isAfter(date);
+                  final isContestEnded = now.isAfter(date.add(Duration(minutes: duration)));
 
-                      return FutureBuilder<DocumentSnapshot>(
-                        future: firestore.collection('test_types').doc(testTypeId).get(),
-                        builder: (context, testTypeSnapshot) {
-                          if (testTypeSnapshot.connectionState == ConnectionState.waiting) {
-                            return const ListTile(title: Text('Загрузка...'));
+                  return FutureBuilder<DocumentSnapshot>(
+                    future: firestore.collection('test_types').doc(testTypeId).get(),
+                    builder: (context, testTypeSnapshot) {
+                      if (testTypeSnapshot.connectionState == ConnectionState.waiting) {
+                        return const ListTile(title: Text('Загрузка...'));
+                      }
+                      if (testTypeSnapshot.hasError) {
+                        return const ListTile(title: Text('Ошибка загрузки типа теста'));
+                      }
+                      final testTypeName = testTypeSnapshot.data?['name'] ?? 'Неизвестный тест';
+                      return FutureBuilder<bool>(
+                        future: _hasUserCompletedContest(contestId),
+                        builder: (context, completedSnapshot) {
+                          if (completedSnapshot.connectionState == ConnectionState.waiting) {
+                            return const ListTile(title: Text('Проверка статуса...'));
                           }
-                          if (testTypeSnapshot.hasError) {
-                            return const ListTile(title: Text('Ошибка загрузки типа теста'));
-                          }
-                          final testTypeName = testTypeSnapshot.data?['name'] ?? 'Неизвестный тест';
-                          return FutureBuilder<bool>(
-                            future: _hasUserCompletedContest(contestId),
-                            builder: (context, completedSnapshot) {
-                              if (completedSnapshot.connectionState == ConnectionState.waiting) {
-                                return const ListTile(title: Text('Проверка статуса...'));
-                              }
-                              bool hasCompleted = completedSnapshot.data ?? false;
-                              return FadeTransition(
-                                opacity: _fadeAnimation,
-                                child: SlideTransition(
-                                  position: _slideAnimation,
-                                  child: Card(
-                                    color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(15),
-                                      side: BorderSide(
-                                        color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
-                                        width: 1,
-                                      ),
-                                    ),
-                                    elevation: _currentTheme == 'light' ? 5 : 0,
-                                    margin: const EdgeInsets.symmetric(vertical: 8.0),
-                                    child: ListTile(
-                                      leading: Icon(
-                                        Icons.event,
-                                        color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                      ),
-                                      title: Text(
-                                        'Контест: $testTypeName ($language)',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                                        ),
-                                      ),
-                                      subtitle: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                          bool hasCompleted = completedSnapshot.data ?? false;
+                          return FadeTransition(
+                            opacity: _fadeAnimation,
+                            child: SlideTransition(
+                              position: _slideAnimation,
+                              child: Card(
+                                color: _cardColor,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  side: BorderSide(color: _borderColor, width: 1),
+                                ),
+                                elevation: widget.currentTheme == 'light' ? 4 : 0,
+                                margin: const EdgeInsets.symmetric(vertical: 8.0),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
                                         children: [
-                                          Text(
-                                            'Дата: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(date)}',
-                                            style: TextStyle(
-                                              color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                            ),
+                                          Icon(
+                                            Icons.event,
+                                            color: Color(0xFFFF6F61),
+                                            size: 24,
                                           ),
-                                          Text(
-                                            'Длительность: $duration мин',
-                                            style: TextStyle(
-                                              color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                            ),
-                                          ),
-                                          Text(
-                                            'Тип: ${isRestricted ? 'Ограниченный' : 'Открытый'}',
-                                            style: TextStyle(
-                                              color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                            ),
-                                          ),
-                                          Text(
-                                            'Участников: ${participants.length}',
-                                            style: TextStyle(
-                                              color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                            ),
-                                          ),
-                                          if (isParticipant && !isContestStarted)
-                                            Text(
-                                              _formatTimeUntil(date),
-                                              style: TextStyle(
-                                                color: _currentTheme == 'light' ? const Color(0xFF4A90E2) : const Color(0xFF8E2DE2),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Контест: $testTypeName ($language)',
+                                              style: GoogleFonts.orbitron(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 18,
+                                                color: _textColor,
+                                                letterSpacing: 1.2,
                                               ),
                                             ),
+                                          ),
                                         ],
                                       ),
-                                      trailing: isContestEnded || hasCompleted
-                                          ? _buildAnimatedButton(
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        'Дата: ${DateFormat('d MMMM yyyy, HH:mm', 'ru').format(date)}',
+                                        style: TextStyle(color: _secondaryTextColor),
+                                      ),
+                                      Text(
+                                        'Длительность: $duration мин',
+                                        style: TextStyle(color: _secondaryTextColor),
+                                      ),
+                                      Text(
+                                        'Тип: ${isRestricted ? 'Ограниченный' : 'Открытый'}',
+                                        style: TextStyle(color: _secondaryTextColor),
+                                      ),
+                                      Text(
+                                        'Участников: ${participants.length}',
+                                        style: TextStyle(color: _secondaryTextColor),
+                                      ),
+                                      if (isParticipant && !isContestStarted)
+                                        Text(
+                                          _formatTimeUntil(date),
+                                          style: TextStyle(
+                                            color: Color(0xFFFF6F61),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      const SizedBox(height: 16),
+                                      Divider(color: _borderColor),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        children: [
+                                          if (hasCompleted || isContestEnded)
+                                            CustomAnimatedButton(
                                               onPressed: () {
                                                 Navigator.push(
                                                   context,
                                                   MaterialPageRoute(
-                                                    builder: (context) => ContestResultsPage(contestId: contestId),
+                                                    builder: (context) => ContestResultsPage(
+                                                      contestId: contestId,
+                                                      currentTheme: widget.currentTheme,
+                                                    ),
                                                   ),
                                                 );
                                               },
-                                              gradientColors: _currentTheme == 'light'
-                                                  ? [const Color(0xFF4A90E2), const Color(0xFF50C9C3)]
-                                                  : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
+                                              gradientColors: _buttonGradientColors,
                                               label: 'Результаты',
-                                            )
-                                          : isContestStarted && isParticipant
-                                              ? _buildAnimatedButton(
-                                                  onPressed: () => _startContest(contestId, testTypeId, language),
-                                                  gradientColors: _currentTheme == 'light'
-                                                      ? [Colors.green, Colors.greenAccent]
-                                                      : [Colors.greenAccent, Colors.green],
-                                                  label: 'Начать',
-                                                )
-                                              : isParticipant
-                                                  ? Text(
-                                                      'Зарегистрирован',
-                                                      style: TextStyle(
-                                                        color: _currentTheme == 'light' ? Colors.green : Colors.greenAccent,
-                                                      ),
-                                                    )
-                                                  : _buildAnimatedButton(
-                                                      onPressed: () =>
-                                                          _registerForContest(contestId, isRestricted, contest['password']),
-                                                      gradientColors: _currentTheme == 'light'
-                                                          ? [const Color(0xFFFF6F61), const Color(0xFFFFB74D)]
-                                                          : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
-                                                      label: 'Зарегистрироваться',
-                                                    ),
-                                    ),
+                                              currentTheme: widget.currentTheme,
+                                              isHeader: false,
+                                            ),
+                                          if (!hasCompleted && isContestStarted && isParticipant && !isContestEnded)
+                                            CustomAnimatedButton(
+                                              onPressed: () => _startContest(contestId, testTypeId, language),
+                                              gradientColors: _buttonGradientColors,
+                                              label: 'Начать',
+                                              currentTheme: widget.currentTheme,
+                                              isHeader: false,
+                                            ),
+                                          if (!isParticipant && !isContestStarted && !isContestEnded)
+                                            CustomAnimatedButton(
+                                              onPressed: () => _registerForContest(contestId, isRestricted, contest['password']),
+                                              gradientColors: _buttonGradientColors,
+                                              label: 'Зарегистрироваться',
+                                              currentTheme: widget.currentTheme,
+                                              isHeader: false,
+                                            ),
+                                          if (isParticipant && !isContestStarted)
+                                            Text(
+                                              'Зарегистрирован',
+                                              style: TextStyle(
+                                                color: Colors.green,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              );
-                            },
+                              ),
+                            ),
                           );
                         },
                       );
                     },
                   );
                 },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAnimatedButton({
-    required VoidCallback? onPressed,
-    required List<Color> gradientColors,
-    required String label,
-  }) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      child: GestureDetector(
-        onTap: onPressed,
-        child: AnimatedScale(
-          duration: const Duration(milliseconds: 200),
-          scale: onPressed != null ? 1.0 : 0.95,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: gradientColors,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: _currentTheme == 'light' && onPressed != null
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      ),
-                    ]
-                  : [],
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -510,20 +465,34 @@ class _ContestsPageState extends State<ContestsPage> with SingleTickerProviderSt
 
 class ContestResultsPage extends StatefulWidget {
   final String contestId;
+  final String currentTheme;
 
-  const ContestResultsPage({super.key, required this.contestId});
+  const ContestResultsPage({super.key, required this.contestId, required this.currentTheme});
 
   @override
   _ContestResultsPageState createState() => _ContestResultsPageState();
 }
 
 class _ContestResultsPageState extends State<ContestResultsPage> with SingleTickerProviderStateMixin {
-  String _currentTheme = 'light';
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   Map<String, dynamic>? _userResult;
   int? _userRank;
+
+  // Color schemes for light and dark themes
+  List<Color> get _backgroundColors {
+    if (widget.currentTheme == 'light') {
+      return [Colors.white, const Color(0xFFF5E6FF)];
+    } else {
+      return [const Color(0xFF1A1A2E), const Color(0xFF16213E)];
+    }
+  }
+
+  Color get _textColor => widget.currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white;
+  Color get _secondaryTextColor => widget.currentTheme == 'light' ? Colors.grey[600]! : Colors.white70;
+  Color get _cardColor => widget.currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05);
+  Color get _borderColor => widget.currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent;
 
   @override
   void initState() {
@@ -539,15 +508,7 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
     _animationController.forward();
-    _loadTheme();
     _loadUserResult();
-  }
-
-  Future<void> _loadTheme() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _currentTheme = prefs.getString('theme') ?? 'light';
-    });
   }
 
   Future<void> _loadUserResult() async {
@@ -596,54 +557,53 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
   Widget build(BuildContext context) {
     final firestore = FirebaseFirestore.instance;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Результаты контеста',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-          ),
-        ),
-        backgroundColor: _currentTheme == 'light' ? Colors.white : const Color(0xFF1A0033),
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-          ),
-          onPressed: () => Navigator.pop(context),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 500),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: _backgroundColors,
         ),
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: _currentTheme == 'light'
-                ? [Colors.white, const Color(0xFFF5E6FF)]
-                : [const Color(0xFF1A0033), const Color(0xFF2E004F)],
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: Text(
+            'Результаты контеста',
+            style: GoogleFonts.orbitron(
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+              color: _textColor,
+              letterSpacing: 1.2,
+            ),
+          ),
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: _backgroundColors,
+              ),
+            ),
+          ),
+          elevation: 0,
+          centerTitle: true,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: _textColor),
+            onPressed: () => Navigator.pop(context),
           ),
         ),
-        child: Padding(
+        body: Padding(
           padding: const EdgeInsets.all(20.0),
           child: StreamBuilder<DocumentSnapshot>(
             stream: firestore.collection('contests').doc(widget.contestId).snapshots(),
             builder: (context, contestSnapshot) {
               if (contestSnapshot.hasError) {
-                return Center(
-                  child: Text(
-                    'Ошибка: ${contestSnapshot.error}',
-                    style: TextStyle(
-                      color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                    ),
-                  ),
-                );
+                return Center(child: Text('Ошибка: ${contestSnapshot.error}', style: TextStyle(color: _textColor)));
               }
               if (contestSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return Center(child: CircularProgressIndicator(color: _textColor));
               }
               final contest = contestSnapshot.data!;
               final testTypeId = contest['test_type_id'] as String;
@@ -657,7 +617,7 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                 future: firestore.collection('test_types').doc(testTypeId).get(),
                 builder: (context, testTypeSnapshot) {
                   if (testTypeSnapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return Center(child: CircularProgressIndicator(color: _textColor));
                   }
                   if (testTypeSnapshot.hasError) {
                     return const Center(child: Text('Ошибка загрузки типа теста'));
@@ -673,10 +633,11 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                           position: _slideAnimation,
                           child: Text(
                             'Контест: $testTypeName ($language)',
-                            style: TextStyle(
+                            style: GoogleFonts.orbitron(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
-                              color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                              color: _textColor,
+                              letterSpacing: 1.2,
                             ),
                           ),
                         ),
@@ -688,17 +649,11 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                           position: _slideAnimation,
                           child: Row(
                             children: [
-                              Icon(
-                                Icons.people,
-                                color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                              ),
+                              Icon(Icons.people, color: _secondaryTextColor),
                               const SizedBox(width: 8),
                               Text(
                                 'Участников: ${participants.length}',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                                ),
+                                style: TextStyle(fontSize: 16, color: _textColor),
                               ),
                             ],
                           ),
@@ -711,15 +666,12 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                           child: SlideTransition(
                             position: _slideAnimation,
                             child: Card(
-                              color: _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05),
+                              color: _cardColor,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(15),
-                                side: BorderSide(
-                                  color: _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent,
-                                  width: 1,
-                                ),
+                                side: BorderSide(color: _borderColor, width: 1),
                               ),
-                              elevation: _currentTheme == 'light' ? 5 : 0,
+                              elevation: widget.currentTheme == 'light' ? 4 : 0,
                               child: Padding(
                                 padding: const EdgeInsets.all(16.0),
                                 child: Column(
@@ -727,63 +679,59 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                                   children: [
                                     Text(
                                       'Ваш результат',
-                                      style: TextStyle(
+                                      style: GoogleFonts.orbitron(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
-                                        color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                        color: _textColor,
+                                        letterSpacing: 1.2,
                                       ),
                                     ),
                                     const SizedBox(height: 8),
                                     Row(
                                       children: [
                                         Icon(
-                                          Icons.star,
-                                          color: _currentTheme == 'light' ? Colors.amber : Colors.amberAccent,
+                                          _userRank == 1
+                                              ? Icons.star
+                                              : _userRank == 2
+                                              ? Icons.star_border
+                                              : _userRank == 3
+                                              ? Icons.star_half
+                                              : Icons.star_border,
+                                          color: _userRank == 1
+                                              ? Colors.amber
+                                              : _userRank == 2
+                                              ? Colors.grey
+                                              : _userRank == 3
+                                              ? Colors.brown
+                                              : _secondaryTextColor,
                                           size: 20,
                                         ),
                                         const SizedBox(width: 8),
                                         Text(
                                           'Место: $_userRank из ${participants.length}',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                                          ),
+                                          style: TextStyle(fontSize: 16, color: _textColor),
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 4),
                                     Row(
                                       children: [
-                                        Icon(
-                                          Icons.score,
-                                          color: _currentTheme == 'light' ? Colors.grey : Colors.white70,
-                                          size: 20,
-                                        ),
+                                        Icon(Icons.score, color: _secondaryTextColor, size: 20),
                                         const SizedBox(width: 8),
                                         Text(
                                           'Баллы: ${_userResult!['points'].toStringAsFixed(1)}',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                                          ),
+                                          style: TextStyle(fontSize: 16, color: _textColor),
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 4),
                                     Row(
                                       children: [
-                                        Icon(
-                                          Icons.check_circle,
-                                          color: _currentTheme == 'light' ? Colors.green : Colors.greenAccent,
-                                          size: 20,
-                                        ),
+                                        Icon(Icons.check_circle, color: Colors.green, size: 20),
                                         const SizedBox(width: 8),
                                         Text(
                                           'Правильных: ${_userResult!['correct_answers']}/${_userResult!['total_questions']}',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                                          ),
+                                          style: TextStyle(fontSize: 16, color: _textColor),
                                         ),
                                       ],
                                     ),
@@ -806,16 +754,11 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                           builder: (context, resultsSnapshot) {
                             if (resultsSnapshot.hasError) {
                               return Center(
-                                child: Text(
-                                  'Ошибка: ${resultsSnapshot.error}',
-                                  style: TextStyle(
-                                    color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                                  ),
-                                ),
+                                child: Text('Ошибка: ${resultsSnapshot.error}', style: TextStyle(color: _textColor)),
                               );
                             }
                             if (resultsSnapshot.connectionState == ConnectionState.waiting) {
-                              return const Center(child: CircularProgressIndicator());
+                              return Center(child: CircularProgressIndicator(color: _textColor));
                             }
                             final results = resultsSnapshot.data!.docs;
                             if (results.isEmpty) {
@@ -826,10 +769,7 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                                     position: _slideAnimation,
                                     child: Text(
                                       'Результаты отсутствуют',
-                                      style: TextStyle(
-                                        color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
-                                        fontSize: 16,
-                                      ),
+                                      style: TextStyle(color: _textColor, fontSize: 16),
                                     ),
                                   ),
                                 ),
@@ -840,68 +780,88 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                               scrollDirection: Axis.horizontal,
                               child: SingleChildScrollView(
                                 child: DataTable(
-                                  dataRowHeight: 60,
+                                  columnSpacing: 16,
+                                  dataRowHeight: 56,
+                                  headingRowHeight: 64,
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: _borderColor),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                   columns: [
                                     DataColumn(
                                       label: Text(
                                         'Место',
-                                        style: TextStyle(
+                                        style: GoogleFonts.orbitron(
                                           fontWeight: FontWeight.bold,
-                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          fontSize: 16,
+                                          color: _textColor,
+                                          letterSpacing: 1.2,
                                         ),
                                       ),
                                     ),
                                     DataColumn(
                                       label: Text(
                                         'Имя',
-                                        style: TextStyle(
+                                        style: GoogleFonts.orbitron(
                                           fontWeight: FontWeight.bold,
-                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          fontSize: 16,
+                                          color: _textColor,
+                                          letterSpacing: 1.2,
                                         ),
                                       ),
                                     ),
                                     DataColumn(
                                       label: Text(
                                         'Фамилия',
-                                        style: TextStyle(
+                                        style: GoogleFonts.orbitron(
                                           fontWeight: FontWeight.bold,
-                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          fontSize: 16,
+                                          color: _textColor,
+                                          letterSpacing: 1.2,
                                         ),
                                       ),
                                     ),
                                     DataColumn(
                                       label: Text(
                                         'Баллы',
-                                        style: TextStyle(
+                                        style: GoogleFonts.orbitron(
                                           fontWeight: FontWeight.bold,
-                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          fontSize: 16,
+                                          color: _textColor,
+                                          letterSpacing: 1.2,
                                         ),
                                       ),
                                     ),
                                     DataColumn(
                                       label: Text(
                                         'Правильные',
-                                        style: TextStyle(
+                                        style: GoogleFonts.orbitron(
                                           fontWeight: FontWeight.bold,
-                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          fontSize: 16,
+                                          color: _textColor,
+                                          letterSpacing: 1.2,
                                         ),
                                       ),
                                     ),
                                     DataColumn(
                                       label: Text(
                                         'Время',
-                                        style: TextStyle(
+                                        style: GoogleFonts.orbitron(
                                           fontWeight: FontWeight.bold,
-                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          fontSize: 16,
+                                          color: _textColor,
+                                          letterSpacing: 1.2,
                                         ),
                                       ),
                                     ),
                                     DataColumn(
                                       label: Text(
                                         'Дата завершения',
-                                        style: TextStyle(
+                                        style: GoogleFonts.orbitron(
                                           fontWeight: FontWeight.bold,
-                                          color: _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white,
+                                          fontSize: 16,
+                                          color: _textColor,
+                                          letterSpacing: 1.2,
                                         ),
                                       ),
                                     ),
@@ -919,21 +879,33 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                                         : null;
 
                                     return DataRow(
+                                      color: MaterialStateProperty.resolveWith<Color?>((states) {
+                                        if (index % 2 == 0) {
+                                          return widget.currentTheme == 'light'
+                                              ? Colors.grey[50]
+                                              : Colors.white.withOpacity(0.03);
+                                        }
+                                        return null;
+                                      }),
                                       cells: [
                                         DataCell(
-                                          Text(
-                                            '${index + 1}',
-                                            style: TextStyle(
-                                              color: index == 0
-                                                  ? Colors.amber
-                                                  : index == 1
-                                                      ? Colors.grey
-                                                      : index == 2
-                                                          ? Colors.brown
-                                                          : (_currentTheme == 'light'
-                                                              ? const Color(0xFF2E2E2E)
-                                                              : Colors.white),
-                                            ),
+                                          Row(
+                                            children: [
+                                              if (index == 0)
+                                                Icon(Icons.star, color: Colors.amber, size: 20)
+                                              else if (index == 1)
+                                                Icon(Icons.star_border, color: Colors.grey, size: 20)
+                                              else if (index == 2)
+                                                  Icon(Icons.star_half, color: Colors.brown, size: 20),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '${index + 1}',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: _textColor,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                         DataCell(
@@ -950,11 +922,7 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                                               final firstName = userData['first_name'] as String? ?? 'Неизвестно';
                                               return Text(
                                                 firstName,
-                                                style: TextStyle(
-                                                  color: _currentTheme == 'light'
-                                                      ? const Color(0xFF2E2E2E)
-                                                      : Colors.white,
-                                                ),
+                                                style: TextStyle(color: _textColor),
                                               );
                                             },
                                           ),
@@ -973,11 +941,7 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                                               final lastName = userData['last_name'] as String? ?? '';
                                               return Text(
                                                 lastName,
-                                                style: TextStyle(
-                                                  color: _currentTheme == 'light'
-                                                      ? const Color(0xFF2E2E2E)
-                                                      : Colors.white,
-                                                ),
+                                                style: TextStyle(color: _textColor),
                                               );
                                             },
                                           ),
@@ -985,31 +949,19 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                                         DataCell(
                                           Text(
                                             points.toStringAsFixed(1),
-                                            style: TextStyle(
-                                              color: _currentTheme == 'light'
-                                                  ? const Color(0xFF2E2E2E)
-                                                  : Colors.white,
-                                            ),
+                                            style: TextStyle(color: _textColor, fontWeight: FontWeight.w500),
                                           ),
                                         ),
                                         DataCell(
                                           Text(
                                             '$correctAnswers/$totalQuestions',
-                                            style: TextStyle(
-                                              color: _currentTheme == 'light'
-                                                  ? const Color(0xFF2E2E2E)
-                                                  : Colors.white,
-                                            ),
+                                            style: TextStyle(color: _textColor),
                                           ),
                                         ),
                                         DataCell(
                                           Text(
                                             '${timeSpent ~/ 60} мин ${timeSpent % 60} сек',
-                                            style: TextStyle(
-                                              color: _currentTheme == 'light'
-                                                  ? const Color(0xFF2E2E2E)
-                                                  : Colors.white,
-                                            ),
+                                            style: TextStyle(color: _textColor),
                                           ),
                                         ),
                                         DataCell(
@@ -1017,11 +969,7 @@ class _ContestResultsPageState extends State<ContestResultsPage> with SingleTick
                                             completedAt != null
                                                 ? DateFormat('d MMMM yyyy, HH:mm', 'ru').format(completedAt)
                                                 : 'Не завершено',
-                                            style: TextStyle(
-                                              color: _currentTheme == 'light'
-                                                  ? const Color(0xFF2E2E2E)
-                                                  : Colors.white,
-                                            ),
+                                            style: TextStyle(color: _textColor),
                                           ),
                                         ),
                                       ],

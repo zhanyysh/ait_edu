@@ -2,12 +2,14 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'custom_animated_button.dart';
 
 class SettingsPage extends StatefulWidget {
   final Function(String) onThemeChanged;
+  final String currentTheme;
 
-  const SettingsPage({super.key, required this.onThemeChanged});
+  const SettingsPage({super.key, required this.onThemeChanged, required this.currentTheme});
 
   @override
   _SettingsPageState createState() => _SettingsPageState();
@@ -19,7 +21,6 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
-  String _currentTheme = 'light';
   bool _isLoading = true;
   bool _isEditing = false;
   String? _errorMessage;
@@ -34,26 +35,24 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  // Цветовые схемы для светлой и тёмной темы
+  // Color schemes for light and dark themes
   List<Color> get _backgroundColors {
-    if (_currentTheme == 'light') {
-      return [
-        Colors.white,
-        const Color(0xFFF5E6FF), // Легкий фиолетовый оттенок для градиента
-      ];
+    if (widget.currentTheme == 'light') {
+      return [Colors.white, const Color(0xFFF5E6FF)];
     } else {
-      return [
-        const Color(0xFF1A0033), // Глубокий темный фон
-        const Color(0xFF2E004F),
-      ];
+      return [const Color(0xFF1A1A2E), const Color(0xFF16213E)];
     }
   }
 
-  Color get _textColor => _currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white;
-  Color get _secondaryTextColor => _currentTheme == 'light' ? Colors.grey[600]! : Colors.white70;
-  Color get _cardColor => _currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05);
-  Color get _borderColor => _currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent;
-  Color get _fieldFillColor => _currentTheme == 'light' ? Colors.grey[100]! : Colors.white.withOpacity(0.08);
+  Color get _textColor => widget.currentTheme == 'light' ? const Color(0xFF2E2E2E) : Colors.white;
+  Color get _secondaryTextColor => widget.currentTheme == 'light' ? Colors.grey[600]! : Colors.white70;
+  Color get _cardColor => widget.currentTheme == 'light' ? Colors.white : Colors.white.withOpacity(0.05);
+  Color get _borderColor => widget.currentTheme == 'light' ? Colors.grey[200]! : Colors.transparent;
+  Color get _fieldFillColor => widget.currentTheme == 'light' ? Colors.grey[100]! : Colors.white.withOpacity(0.08);
+  static const List<Color> _buttonGradientColors = [
+    Color(0xFFFF6F61),
+    Color(0xFFDE4B7C),
+  ];
 
   @override
   void initState() {
@@ -70,7 +69,6 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
     );
     _animationController.forward();
     _loadUserData();
-    _loadTheme();
     _startVerificationCheck();
   }
 
@@ -122,23 +120,6 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
     }
   }
 
-  Future<void> _loadTheme() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _currentTheme = prefs.getString('theme') ?? 'light';
-    });
-  }
-
-  void _toggleTheme() {
-    String newTheme = _currentTheme == 'light' ? 'dark' : 'light';
-    setState(() {
-      _currentTheme = newTheme;
-    });
-    widget.onThemeChanged(newTheme);
-    _animationController.reset();
-    _animationController.forward();
-  }
-
   void _startVerificationCheck() {
     _verificationTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
       if (!_isEmailVerified) {
@@ -154,10 +135,7 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
               if (_isEmailVerified) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(
-                      'Email успешно верифицирован!',
-                      style: TextStyle(color: _textColor),
-                    ),
+                    content: Text('Email успешно верифицирован!', style: TextStyle(color: _textColor)),
                     backgroundColor: Colors.green,
                   ),
                 );
@@ -165,7 +143,7 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
               }
             }
           } catch (e) {
-            // Игнорируем ошибки
+            // Ignore errors
           }
         }
       } else {
@@ -194,10 +172,7 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Ошибка отправки письма: $e',
-              style: TextStyle(color: _textColor),
-            ),
+            content: Text('Ошибка отправки письма: $e', style: TextStyle(color: _textColor)),
             backgroundColor: Colors.red,
           ),
         );
@@ -209,13 +184,7 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
     final user = _auth.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Пользователь не авторизован',
-            style: TextStyle(color: _textColor),
-          ),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Пользователь не авторизован', style: TextStyle(color: _textColor)), backgroundColor: Colors.red),
       );
       return;
     }
@@ -224,44 +193,14 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
         _firstNameController.text.trim().isEmpty ||
         _lastNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Заполните все поля',
-            style: TextStyle(color: _textColor),
-          ),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Заполните все поля', style: TextStyle(color: _textColor)), backgroundColor: Colors.red),
       );
       return;
     }
 
     if (!_emailController.text.contains('@')) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Введите действительный email',
-            style: TextStyle(color: _textColor),
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    await user.reload();
-    setState(() {
-      _isEmailVerified = user.emailVerified;
-    });
-
-    if (!_isEmailVerified) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Пожалуйста, подтвердите ваш email перед изменением данных.',
-            style: TextStyle(color: _textColor),
-          ),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Введите действительный email', style: TextStyle(color: _textColor)), backgroundColor: Colors.red),
       );
       return;
     }
@@ -285,10 +224,7 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
           } else if (e.code == 'email-already-in-use') {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(
-                  'Этот email уже используется другим пользователем.',
-                  style: TextStyle(color: _textColor),
-                ),
+                content: Text('Этот email уже используется другим пользователем.', style: TextStyle(color: _textColor)),
                 backgroundColor: Colors.red,
               ),
             );
@@ -323,395 +259,357 @@ class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderSt
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Данные обновлены',
-            style: TextStyle(color: _textColor),
-          ),
-          backgroundColor: Colors.green,
-        ),
+        SnackBar(content: Text('Данные обновлены', style: TextStyle(color: _textColor)), backgroundColor: Colors.green),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Ошибка обновления: $e',
-            style: TextStyle(color: _textColor),
-          ),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Ошибка обновления: $e', style: TextStyle(color: _textColor)), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _cancelEditing() {
+    setState(() {
+      _isEditing = false;
+      _emailController.text = _email ?? 'Не указано';
+      _firstNameController.text = _firstName ?? 'Не указано';
+      _lastNameController.text = _lastName ?? 'Не указано';
+    });
+  }
+
+  Future<void> _logout() async {
+    try {
+      await _auth.signOut();
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка выхода: $e', style: TextStyle(color: _textColor)), backgroundColor: Colors.red),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Center(
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(
-            _currentTheme == 'light' ? const Color(0xFFFF6F61) : const Color(0xFFE6F0FA),
+    return AnimatedContainer(
+        duration: const Duration(milliseconds: 500),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: _backgroundColors,
           ),
         ),
-      );
-    }
-
-    if (_errorMessage != null) {
-      return Center(
-        child: Text(
-          _errorMessage!,
-          style: TextStyle(color: _textColor, fontSize: 16),
-        ),
-      );
-    }
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 500),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: _backgroundColors,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: SingleChildScrollView(
-          child: FadeTransition(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            title: Text(
+              'Настройки',
+              style: GoogleFonts.orbitron(
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                color: _textColor,
+                letterSpacing: 1.2,
+              ),
+            ),
+            flexibleSpace: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: _backgroundColors,
+                ),
+              ),
+            ),
+            elevation: 0,
+            centerTitle: true,
+          ),
+          body: FadeTransition(
             opacity: _fadeAnimation,
             child: SlideTransition(
               position: _slideAnimation,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Настройки',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: _textColor,
-                          letterSpacing: 1.2,
+              child: _isLoading
+                  ? Center(child: CircularProgressIndicator(color: _textColor))
+                  : SingleChildScrollView(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(color: Colors.red, fontSize: 16),
                         ),
                       ),
-                      _buildAnimatedButton(
-                        onPressed: _toggleTheme,
-                        gradientColors: _currentTheme == 'light'
-                            ? [const Color(0xFFFF6F61), const Color(0xFFFFB74D)]
-                            : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
-                        label: _currentTheme == 'light' ? 'Светлая' : 'Тёмная',
+                    Card(
+                      color: _cardColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                        side: BorderSide(color: _borderColor, width: 1),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  if (!_isEditing) ...[
-                    _buildProfileCard(),
-                    const SizedBox(height: 20),
-                    Center(
-                      child: Column(
-                        children: [
-                          if (!_isEmailVerified) ...[
-                            _buildAnimatedButton(
-                              onPressed: _verificationEmailSent ? null : _sendVerificationEmail,
-                              gradientColors: _verificationEmailSent
-                                  ? [Colors.grey, Colors.grey]
-                                  : _currentTheme == 'light'
-                                      ? [const Color(0xFFFF8C00), const Color(0xFFFFB74D)]
-                                      : [const Color(0xFFDE4B7C), const Color(0xFFFF6F61)],
-                              label: _verificationEmailSent ? 'Письмо отправлено' : 'Подтвердить почту',
+                      elevation: widget.currentTheme == 'light' ? 4 : 0,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.person,
+                                  color: Color(0xFFFF6F61),
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Профиль пользователя',
+                                  style: GoogleFonts.orbitron(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: _textColor,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Divider(color: _borderColor),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Icon(Icons.email, color: _secondaryTextColor, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Email',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: _textColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            _isEditing
+                                ? TextField(
+                              controller: _emailController,
+                              decoration: InputDecoration(
+                                hintText: 'Введите email',
+                                hintStyle: TextStyle(color: _secondaryTextColor),
+                                filled: true,
+                                fillColor: _fieldFillColor,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  borderSide: BorderSide.none,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  borderSide: const BorderSide(color: Colors.transparent),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFFFF6F61),
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                              style: TextStyle(color: _textColor),
+                            )
+                                : Text(
+                              _email ?? 'Не указано',
+                              style: TextStyle(fontSize: 16, color: _secondaryTextColor),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Icon(Icons.person_outline, color: _secondaryTextColor, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Имя',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: _textColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            _isEditing
+                                ? TextField(
+                              controller: _firstNameController,
+                              decoration: InputDecoration(
+                                hintText: 'Введите имя',
+                                hintStyle: TextStyle(color: _secondaryTextColor),
+                                filled: true,
+                                fillColor: _fieldFillColor,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  borderSide: BorderSide.none,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  borderSide: const BorderSide(color: Colors.transparent),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFFFF6F61),
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                              style: TextStyle(color: _textColor),
+                            )
+                                : Text(
+                              _firstName ?? 'Не указано',
+                              style: TextStyle(fontSize: 16, color: _secondaryTextColor),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Icon(Icons.person_outline, color: _secondaryTextColor, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Фамилия',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: _textColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            _isEditing
+                                ? TextField(
+                              controller: _lastNameController,
+                              decoration: InputDecoration(
+                                hintText: 'Введите фамилию',
+                                hintStyle: TextStyle(color: _secondaryTextColor),
+                                filled: true,
+                                fillColor: _fieldFillColor,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  borderSide: BorderSide.none,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  borderSide: const BorderSide(color: Colors.transparent),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFFFF6F61),
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                              style: TextStyle(color: _textColor),
+                            )
+                                : Text(
+                              _lastName ?? 'Не указано',
+                              style: TextStyle(fontSize: 16, color: _secondaryTextColor),
                             ),
                             const SizedBox(height: 16),
+                            Divider(color: _borderColor),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Icon(
+                                  _isEmailVerified ? Icons.verified : Icons.warning,
+                                  color: _isEmailVerified ? Colors.green : Colors.red,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _isEmailVerified ? 'Email верифицирован' : 'Email не верифицирован',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: _isEmailVerified ? Colors.green : Colors.red,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (!_isEmailVerified) ...[
+                              const SizedBox(height: 12),
+                              CustomAnimatedButton(
+                                onPressed: _sendVerificationEmail,
+                                gradientColors: _buttonGradientColors,
+                                label: _verificationEmailSent
+                                    ? 'Отправить письмо повторно'
+                                    : 'Отправить письмо для верификации',
+                                currentTheme: widget.currentTheme,
+                                isHeader: false,
+                              ),
+                            ],
+                            const SizedBox(height: 20),
+                            Divider(color: _borderColor),
+                            const SizedBox(height: 20),
+                            if (_isEditing) ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: CustomAnimatedButton(
+                                      onPressed: _updateUserData,
+                                      gradientColors: _buttonGradientColors,
+                                      label: 'Сохранить',
+                                      currentTheme: widget.currentTheme,
+                                      isHeader: false,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: CustomAnimatedButton(
+                                      onPressed: _cancelEditing,
+                                      gradientColors: _buttonGradientColors,
+                                      label: 'Отмена',
+                                      currentTheme: widget.currentTheme,
+                                      isHeader: false,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                            ] else ...[
+                              CustomAnimatedButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _isEditing = true;
+                                  });
+                                },
+                                gradientColors: _buttonGradientColors,
+                                label: 'Редактировать профиль',
+                                currentTheme: widget.currentTheme,
+                                isHeader: false,
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+                            CustomAnimatedButton(
+                              onPressed: _logout,
+                              gradientColors: [
+                                Colors.red,
+                                Colors.redAccent,
+                              ],
+                              label: 'Выйти',
+                              currentTheme: widget.currentTheme,
+                              isHeader: false,
+                            ),
                           ],
-                          _buildAnimatedButton(
-                            onPressed: () {
-                              setState(() {
-                                _isEditing = true;
-                              });
-                            },
-                            gradientColors: _currentTheme == 'light'
-                                ? [const Color(0xFF4A90E2), const Color(0xFF50C9C3)]
-                                : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
-                            label: 'Редактировать профиль',
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ] else ...[
-                    _buildEditProfileCard(),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildAnimatedButton(
-                          onPressed: _updateUserData,
-                          gradientColors: _currentTheme == 'light'
-                              ? [const Color(0xFF4A90E2), const Color(0xFF50C9C3)]
-                              : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
-                          label: 'Сохранить',
-                        ),
-                        const SizedBox(width: 16),
-                        _buildAnimatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _isEditing = false;
-                              _emailController.text = _email!;
-                              _firstNameController.text = _firstName!;
-                              _lastNameController.text = _lastName!;
-                            });
-                          },
-                          gradientColors: [Colors.grey, Colors.grey],
-                          label: 'Отмена',
-                        ),
-                      ],
                     ),
                   ],
-                  const SizedBox(height: 20),
-                  Center(
-                    child: _buildAnimatedButton(
-                      onPressed: () async {
-                        await FirebaseAuth.instance.signOut();
-                        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-                      },
-                      gradientColors: [Colors.red, Colors.redAccent],
-                      label: 'Выйти',
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAnimatedButton({
-    required VoidCallback? onPressed,
-    required List<Color> gradientColors,
-    required String label,
-  }) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      child: GestureDetector(
-        onTap: onPressed,
-        child: AnimatedScale(
-          duration: const Duration(milliseconds: 200),
-          scale: onPressed != null ? 1.0 : 0.95,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: gradientColors,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: _currentTheme == 'light' && onPressed != null
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      ),
-                    ]
-                  : [],
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfileCard() {
-    return Card(
-      color: _cardColor,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: _borderColor, width: 1),
-      ),
-      elevation: _currentTheme == 'light' ? 8 : 0,
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.email_outlined, color: _secondaryTextColor, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Email',
-                  style: TextStyle(fontSize: 14, color: _secondaryTextColor),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  _email!,
-                  style: TextStyle(fontSize: 16, color: _textColor, fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _isEmailVerified ? '(верифицирован)' : '(не верифицирован)',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: _isEmailVerified ? Colors.green : Colors.red,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Icon(Icons.person_outline, color: _secondaryTextColor, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Имя',
-                  style: TextStyle(fontSize: 14, color: _secondaryTextColor),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _firstName!,
-              style: TextStyle(fontSize: 16, color: _textColor, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Icon(Icons.person_outline, color: _secondaryTextColor, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Фамилия',
-                  style: TextStyle(fontSize: 14, color: _secondaryTextColor),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _lastName!,
-              style: TextStyle(fontSize: 16, color: _textColor, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEditProfileCard() {
-    return Card(
-      color: _cardColor,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: _borderColor, width: 1),
-      ),
-      elevation: _currentTheme == 'light' ? 8 : 0,
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _emailController,
-              style: TextStyle(color: _textColor),
-              decoration: InputDecoration(
-                prefixIcon: Icon(Icons.email_outlined, color: _secondaryTextColor),
-                labelText: 'Email',
-                labelStyle: TextStyle(color: _secondaryTextColor),
-                filled: true,
-                fillColor: _fieldFillColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: const BorderSide(color: Colors.transparent),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide(
-                    color: _currentTheme == 'light'
-                        ? const Color(0xFFFF6F61)
-                        : const Color(0xFF8E2DE2),
-                    width: 2,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _firstNameController,
-              style: TextStyle(color: _textColor),
-              decoration: InputDecoration(
-                prefixIcon: Icon(Icons.person_outline, color: _secondaryTextColor),
-                labelText: 'Имя',
-                labelStyle: TextStyle(color: _secondaryTextColor),
-                filled: true,
-                fillColor: _fieldFillColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: const BorderSide(color: Colors.transparent),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide(
-                    color: _currentTheme == 'light'
-                        ? const Color(0xFFFF6F61)
-                        : const Color(0xFF8E2DE2),
-                    width: 2,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _lastNameController,
-              style: TextStyle(color: _textColor),
-              decoration: InputDecoration(
-                prefixIcon: Icon(Icons.person_outline, color: _secondaryTextColor),
-                labelText: 'Фамилия',
-                labelStyle: TextStyle(color: _secondaryTextColor),
-                filled: true,
-                fillColor: _fieldFillColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: const BorderSide(color: Colors.transparent),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: BorderSide(
-                    color: _currentTheme == 'light'
-                        ? const Color(0xFFFF6F61)
-                        : const Color(0xFF8E2DE2),
-                    width: 2,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+        ));
   }
 }
